@@ -59,18 +59,14 @@ DEFAULT_COOKIES = [
 # ---------------------------------------------------------------------------
 # UI styling
 # ---------------------------------------------------------------------------
-CUSTOM_CSS = """
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<style>
+CUSTOM_CSS = """<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 :root {
     --dmx-accent: #e30613;
     --dmx-accent-soft: #fff1f1;
     --dmx-accent-2: #ff7a45;
 }
 html, body, [class*="css"] { font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif; }
-
 .dmx-hero {
     position: relative;
     overflow: hidden;
@@ -89,7 +85,6 @@ html, body, [class*="css"] { font-family: 'Inter', -apple-system, 'Segoe UI', sa
 }
 .dmx-hero h1 { margin: 0 0 6px 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
 .dmx-hero p { margin: 0; opacity: 0.95; font-size: 14px; line-height: 1.55; max-width: 720px; }
-
 .dmx-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 20px 0; }
 .dmx-chip {
     display: inline-flex; align-items: center; gap: 6px;
@@ -97,7 +92,6 @@ html, body, [class*="css"] { font-family: 'Inter', -apple-system, 'Segoe UI', sa
     background: var(--dmx-accent-soft); color: var(--dmx-accent);
     border: 1px solid rgba(227,6,19,0.12);
 }
-
 .dmx-badge {
     display: inline-block; padding: 2px 10px; border-radius: 999px;
     font-size: 11px; font-weight: 700; background: var(--dmx-accent-soft);
@@ -112,7 +106,6 @@ html, body, [class*="css"] { font-family: 'Inter', -apple-system, 'Segoe UI', sa
 }
 .dmx-cat-header h3 { margin: 0; font-size: 16.5px; font-weight: 700; color: #b5030f; }
 .dmx-cat-icon { font-size: 20px; }
-
 .dmx-card {
     border: 1px solid rgba(120,120,120,0.16);
     border-radius: 16px;
@@ -132,7 +125,6 @@ html, body, [class*="css"] { font-family: 'Inter', -apple-system, 'Segoe UI', sa
     background: var(--dmx-accent-soft); color: var(--dmx-accent);
     padding: 1px 6px; border-radius: 6px; font-weight: 600;
 }
-
 [data-testid="stImage"] img { border-radius: 12px; }
 [data-testid="stMetric"] {
     background: rgba(227,6,19,0.045);
@@ -141,8 +133,7 @@ html, body, [class*="css"] { font-family: 'Inter', -apple-system, 'Segoe UI', sa
     padding: 10px 6px 6px 6px;
 }
 button[kind="primary"] { border-radius: 10px !important; font-weight: 700 !important; }
-</style>
-"""
+</style>"""
 
 CATEGORY_ICON_RULES = [
     (("máy lạnh", "điều hòa", "điều hoà"), "❄️"),
