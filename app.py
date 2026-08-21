@@ -363,10 +363,12 @@ def scrape_one(session: requests.Session, entry: str, retries: int = 2):
                     if base not in seen:
                         seen.add(base)
                         gallery.append(base)
-    if not gallery:
-        og_img = soup.find("meta", property="og:image")
-        if og_img and og_img.get("content"):
-            gallery = [strip_size_suffix(og_img["content"])]
+    og_img = soup.find("meta", property="og:image")
+    if og_img and og_img.get("content"):
+        og_url = strip_size_suffix(og_img["content"])
+        seen_urls = {strip_size_suffix(u) for u in gallery}
+        if og_url not in seen_urls:
+            gallery.insert(0, og_url)
 
     # Specs
     # Each spec row is normally <li><aside><strong>Label:</strong></aside><aside>...value(s)...</aside></li>.
