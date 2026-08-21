@@ -10,6 +10,9 @@ import pandas as pd
 import requests
 import streamlit as st
 from bs4 import BeautifulSoup
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 st.set_page_config(page_title="DienmayXANH Product Scraper", page_icon="📦", layout="wide")
 
@@ -57,21 +60,44 @@ DEFAULT_COOKIES = [
 # UI styling
 # ---------------------------------------------------------------------------
 CUSTOM_CSS = """
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
     --dmx-accent: #e30613;
     --dmx-accent-soft: #fff1f1;
+    --dmx-accent-2: #ff7a45;
 }
+html, body, [class*="css"] { font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif; }
+
 .dmx-hero {
-    background: linear-gradient(135deg, #ff5f6d 0%, #e30613 55%, #b5030f 100%);
-    padding: 26px 30px;
-    border-radius: 18px;
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(135deg, #ff7a45 0%, #e30613 55%, #8f0210 100%);
+    padding: 30px 34px;
+    border-radius: 20px;
     color: #fff;
-    margin-bottom: 18px;
-    box-shadow: 0 10px 28px rgba(227,6,19,0.28);
+    margin-bottom: 16px;
+    box-shadow: 0 14px 34px rgba(227,6,19,0.30);
 }
-.dmx-hero h1 { margin: 0 0 6px 0; font-size: 25px; }
-.dmx-hero p { margin: 0; opacity: 0.94; font-size: 14px; line-height: 1.5; }
+.dmx-hero::after {
+    content: "";
+    position: absolute; top: -60px; right: -60px;
+    width: 220px; height: 220px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0) 70%);
+}
+.dmx-hero h1 { margin: 0 0 6px 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
+.dmx-hero p { margin: 0; opacity: 0.95; font-size: 14px; line-height: 1.55; max-width: 720px; }
+
+.dmx-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 20px 0; }
+.dmx-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+    background: var(--dmx-accent-soft); color: var(--dmx-accent);
+    border: 1px solid rgba(227,6,19,0.12);
+}
+
 .dmx-badge {
     display: inline-block; padding: 2px 10px; border-radius: 999px;
     font-size: 11px; font-weight: 700; background: var(--dmx-accent-soft);
@@ -79,22 +105,66 @@ CUSTOM_CSS = """
 }
 .dmx-cat-header {
     display: flex; align-items: center; gap: 8px;
-    padding: 10px 16px; border-radius: 12px;
-    background: var(--dmx-accent-soft); margin: 22px 0 12px 0;
+    padding: 12px 18px; border-radius: 14px;
+    background: linear-gradient(90deg, var(--dmx-accent-soft) 0%, rgba(255,255,255,0) 100%);
+    border-left: 4px solid var(--dmx-accent);
+    margin: 24px 0 14px 0;
 }
-.dmx-cat-header h3 { margin: 0; font-size: 16px; color: #b5030f; }
+.dmx-cat-header h3 { margin: 0; font-size: 16.5px; font-weight: 700; color: #b5030f; }
+.dmx-cat-icon { font-size: 20px; }
+
 .dmx-card {
-    border: 1px solid rgba(120,120,120,0.2);
-    border-radius: 14px;
-    padding: 12px;
-    margin-bottom: 16px;
-    transition: box-shadow .15s ease, transform .15s ease;
+    border: 1px solid rgba(120,120,120,0.16);
+    border-radius: 16px;
+    padding: 14px;
+    margin-bottom: 18px;
+    background: rgba(127,127,127,0.02);
+    transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
 }
-.dmx-card:hover { box-shadow: 0 6px 18px rgba(0,0,0,0.10); transform: translateY(-1px); }
-.dmx-card-name { font-weight: 600; font-size: 14px; margin: 6px 0 2px 0; line-height: 1.3; }
-.dmx-card-meta { font-size: 12px; opacity: 0.65; margin-bottom: 6px; }
+.dmx-card:hover {
+    box-shadow: 0 10px 26px rgba(0,0,0,0.12);
+    transform: translateY(-2px);
+    border-color: rgba(227,6,19,0.35);
+}
+.dmx-card-name { font-weight: 700; font-size: 14.5px; margin: 8px 0 3px 0; line-height: 1.35; }
+.dmx-card-meta { font-size: 12px; opacity: 0.62; margin-bottom: 8px; }
+.dmx-card-meta code {
+    background: var(--dmx-accent-soft); color: var(--dmx-accent);
+    padding: 1px 6px; border-radius: 6px; font-weight: 600;
+}
+
+[data-testid="stImage"] img { border-radius: 12px; }
+[data-testid="stMetric"] {
+    background: rgba(227,6,19,0.045);
+    border: 1px solid rgba(227,6,19,0.10);
+    border-radius: 14px;
+    padding: 10px 6px 6px 6px;
+}
+button[kind="primary"] { border-radius: 10px !important; font-weight: 700 !important; }
 </style>
 """
+
+CATEGORY_ICON_RULES = [
+    (("máy lạnh", "điều hòa", "điều hoà"), "❄️"),
+    (("tủ lạnh", "tủ đông", "tủ mát"), "🧊"),
+    (("máy giặt", "sấy"), "🌀"),
+    (("tivi", "tv", "smart tivi"), "📺"),
+    (("quạt",), "🌬️"),
+    (("bếp", "lò vi sóng", "lò nướng"), "🍳"),
+    (("máy lọc nước", "lọc nước"), "💧"),
+    (("máy lọc không khí", "lọc không khí"), "🌫️"),
+    (("bình nóng lạnh", "nước nóng"), "🚿"),
+    (("loa", "âm thanh"), "🔊"),
+    (("điện thoại", "laptop", "máy tính"), "💻"),
+]
+
+
+def category_icon(cate_name: str) -> str:
+    low = (cate_name or "").lower()
+    for keywords, icon in CATEGORY_ICON_RULES:
+        if any(k in low for k in keywords):
+            return icon
+    return "📂"
 
 HEADERS = {
     "User-Agent": (
@@ -137,6 +207,94 @@ def safe_folder_name(name: str, fallback: str) -> str:
     name = re.sub(r'[\\/:*?"<>|]+', "-", name)
     name = re.sub(r"\s+", " ", name).strip()
     return name[:100] if name else fallback
+
+
+ACCENT_FILL = PatternFill(start_color="FFE30613", end_color="FFE30613", fill_type="solid")
+SOFT_FILL = PatternFill(start_color="FFFFF1F1", end_color="FFFFF1F1", fill_type="solid")
+WHITE_BOLD = Font(bold=True, color="FFFFFFFF", size=13)
+LABEL_BOLD = Font(bold=True)
+WRAP_TOP = Alignment(wrap_text=True, vertical="top")
+
+
+def build_specs_workbook(items) -> bytes:
+    """1 sản phẩm = 1 khối: tiêu đề + Mã SP/URL + bảng Thông số/Giá trị — trình bày dọc,
+    giống hệt cách hiển thị 'Thông số | Giá trị' trên web, dễ đọc hơn nhiều so với việc
+    nhồi hàng chục cột thông số ngang trên 1 dòng."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Thong so ky thuat"
+    ws.column_dimensions[get_column_letter(1)].width = 34
+    ws.column_dimensions[get_column_letter(2)].width = 85
+
+    row = 1
+    for r in items:
+        ws.cell(row=row, column=1, value=r["name"] or r["input"]).font = WHITE_BOLD
+        ws.cell(row=row, column=1).fill = ACCENT_FILL
+        ws.cell(row=row, column=2).fill = ACCENT_FILL
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+        ws.cell(row=row, column=1).alignment = Alignment(vertical="center")
+        ws.row_dimensions[row].height = 24
+        row += 1
+
+        for label, value in (
+            ("Mã sản phẩm", r.get("product_id") or r["input"]),
+            ("URL sản phẩm", r["url"]),
+            ("Category", r.get("cate_name") or ""),
+            ("Số ảnh gallery", len(r["gallery"])),
+        ):
+            ws.cell(row=row, column=1, value=label).font = LABEL_BOLD
+            ws.cell(row=row, column=2, value=value)
+            row += 1
+
+        row += 1
+        ws.cell(row=row, column=1, value="Thông số").font = LABEL_BOLD
+        ws.cell(row=row, column=2, value="Giá trị").font = LABEL_BOLD
+        ws.cell(row=row, column=1).fill = SOFT_FILL
+        ws.cell(row=row, column=2).fill = SOFT_FILL
+        row += 1
+
+        if r["specs"]:
+            for k, v in r["specs"].items():
+                ws.cell(row=row, column=1, value=k).alignment = WRAP_TOP
+                ws.cell(row=row, column=2, value=v).alignment = WRAP_TOP
+                row += 1
+        else:
+            ws.cell(row=row, column=1, value="(không lấy được thông số)")
+            row += 1
+
+        row += 2  # dòng trống ngăn cách giữa các sản phẩm
+
+    ws.freeze_panes = "A2"
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def build_images_workbook(items) -> bytes:
+    """Danh sách link ảnh riêng biệt — mỗi dòng 1 ảnh, tách hẳn khỏi bảng thông số để
+    không bị dồn chung thành 1 bảng ngang rối mắt."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Link hinh anh"
+    headers = ["STT", "Mã SP", "Tên sản phẩm", "STT ảnh", "Link ảnh"]
+    ws.append(headers)
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col)
+        cell.font = Font(bold=True, color="FFFFFFFF")
+        cell.fill = ACCENT_FILL
+    stt = 1
+    for r in items:
+        for gi, url in enumerate(r["gallery"], 1):
+            ws.append([stt, r.get("product_id") or r["input"], r["name"], gi, url])
+            stt += 1
+    for col, w in zip(range(1, 6), [6, 14, 42, 8, 95]):
+        ws.column_dimensions[get_column_letter(col)].width = w
+    ws.freeze_panes = "A2"
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
 
 
 def scrape_one(session: requests.Session, entry: str, retries: int = 2):
@@ -268,7 +426,14 @@ st.markdown(
 <div class="dmx-hero">
   <h1>📦 DienmayXANH Product Scraper</h1>
   <p>Lấy tên, mã sản phẩm, category, toàn bộ ảnh gallery và thông số kỹ thuật từ dienmayxanh.com —
-  tự nhóm theo category, tải song song nhiều luồng, xuất Excel / CSV / JSON / ZIP ảnh chỉ trong vài cú click.</p>
+  tự nhóm theo category, tải song song nhiều luồng, xuất dữ liệu tách riêng theo category chỉ trong vài cú click.</p>
+</div>
+<div class="dmx-chips">
+  <span class="dmx-chip">🍪 Cookie có sẵn</span>
+  <span class="dmx-chip">⚡ Tải đa luồng</span>
+  <span class="dmx-chip">🗂️ Tự nhóm Category</span>
+  <span class="dmx-chip">📁 Xuất riêng từng Category</span>
+  <span class="dmx-chip">📦 ZIP ảnh gốc</span>
 </div>
 """,
     unsafe_allow_html=True,
@@ -333,6 +498,7 @@ if run:
     progress.empty()
     st.session_state["results"] = results
     st.session_state.pop("image_zip", None)
+    st.session_state.pop("export_zip", None)
 
 if "results" in st.session_state:
     results = st.session_state["results"]
@@ -346,12 +512,13 @@ if "results" in st.session_state:
 
     total_imgs = sum(len(r["gallery"]) for r in ok_results)
 
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("📄 Tổng mục nhập", len(results))
-    m2.metric("✅ Thành công", len(ok_results))
-    m3.metric("❌ Lỗi", len(err_results))
-    m4.metric("🗂️ Category", len(groups))
-    m5.metric("🖼️ Tổng ảnh", total_imgs)
+    with st.container(border=True):
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("📄 Tổng mục nhập", len(results))
+        m2.metric("✅ Thành công", len(ok_results))
+        m3.metric("❌ Lỗi", len(err_results))
+        m4.metric("🗂️ Category", len(groups))
+        m5.metric("🖼️ Tổng ảnh", total_imgs)
 
     if err_results:
         with st.expander(f"⚠️ {len(err_results)} mục lỗi", expanded=False):
@@ -386,7 +553,8 @@ if "results" in st.session_state:
                     continue
                 shown_any = True
                 st.markdown(
-                    f'<div class="dmx-cat-header"><h3>📂 {cate_name}'
+                    f'<div class="dmx-cat-header"><span class="dmx-cat-icon">{category_icon(cate_name)}</span>'
+                    f'<h3>{cate_name}'
                     f'<span class="dmx-badge">cate_id {cate_id}</span>'
                     f'<span class="dmx-badge">{len(filtered)} sản phẩm</span></h3></div>',
                     unsafe_allow_html=True,
@@ -439,55 +607,68 @@ if "results" in st.session_state:
 
         # ---- Tab 3: exports ----
         with tab_export:
-            max_gallery = max((len(r["gallery"]) for r in ok_results), default=0)
-            excel_rows = []
-            for (cate_id, cate_name), items in sorted(groups.items(), key=lambda kv: kv[0][1]):
-                for r in items:
-                    row = {
-                        "Category ID": cate_id,
-                        "Category": cate_name,
-                        "Mã SP": r.get("product_id") or r["input"],
-                        "Tên sản phẩm": r["name"],
-                        "URL sản phẩm": r["url"],
-                    }
-                    for i in range(max_gallery):
-                        row[f"Ảnh {i+1}"] = r["gallery"][i] if i < len(r["gallery"]) else ""
-                    for k in spec_keys:
-                        row[k] = r["specs"].get(k, "")
-                    excel_rows.append(row)
-            excel_df = pd.DataFrame(excel_rows)
+            st.markdown("**📁 Xuất dữ liệu — tách riêng theo từng Category**")
+            st.caption(
+                "Mỗi category ra 1 thư mục riêng trong file ZIP, gồm 2 file tách biệt: "
+                "**thong_so_ky_thuat.xlsx** (trình bày dọc từng sản phẩm, giống hệt bảng "
+                "Thông số / Giá trị trên web — dễ đọc, không dồn hàng chục cột ngang) và "
+                "**link_hinh_anh.xlsx** (chỉ danh sách link ảnh, tách riêng khỏi thông số "
+                "cho khỏi rối). Ngoài ra có thêm 1 file tổng quan nhanh ở ngoài cùng."
+            )
+            if st.button("📁 Chuẩn bị file xuất theo category", use_container_width=True):
+                export_buf = io.BytesIO()
+                used_folders = set()
+                with zipfile.ZipFile(export_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                    overview_buf = io.BytesIO()
+                    with pd.ExcelWriter(overview_buf, engine="openpyxl") as writer:
+                        for (cate_id, cate_name), items in sorted(groups.items(), key=lambda kv: kv[0][1]):
+                            sheet_name = safe_folder_name(cate_name, f"cate-{cate_id}")[:31] or f"cate-{cate_id}"
+                            overview_rows = [
+                                {
+                                    "Mã SP": r.get("product_id") or r["input"],
+                                    "Tên sản phẩm": r["name"],
+                                    "URL": r["url"],
+                                    "Số ảnh": len(r["gallery"]),
+                                    "Số thông số": len(r["specs"]),
+                                }
+                                for r in items
+                            ]
+                            pd.DataFrame(overview_rows).to_excel(writer, index=False, sheet_name=sheet_name)
+                    zf.writestr("00_tong_quan_theo_category.xlsx", overview_buf.getvalue())
 
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                buf = io.BytesIO()
-                with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-                    excel_df.to_excel(writer, index=False, sheet_name="San pham")
+                    for (cate_id, cate_name), items in sorted(groups.items(), key=lambda kv: kv[0][1]):
+                        folder = safe_folder_name(cate_name, f"category-{cate_id}")
+                        candidate = folder
+                        n = 1
+                        while candidate in used_folders:
+                            n += 1
+                            candidate = f"{folder} ({n})"
+                        used_folders.add(candidate)
+                        zf.writestr(f"{candidate}/thong_so_ky_thuat.xlsx", build_specs_workbook(items))
+                        zf.writestr(f"{candidate}/link_hinh_anh.xlsx", build_images_workbook(items))
+
+                export_buf.seek(0)
+                st.session_state["export_zip"] = export_buf.getvalue()
+                st.success("Đã chuẩn bị xong, bấm nút bên dưới để tải về.")
+
+            if "export_zip" in st.session_state:
                 st.download_button(
-                    "⬇️ Tải Excel (theo category)",
-                    data=buf.getvalue(),
-                    file_name="dienmayxanh_products.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "⬇️ Tải file xuất (ZIP, tách theo category)",
+                    data=st.session_state["export_zip"],
+                    file_name="dienmayxanh_export_theo_category.zip",
+                    mime="application/zip",
                     use_container_width=True,
                 )
-            with c2:
-                st.download_button(
-                    "⬇️ Tải CSV",
-                    data=excel_df.to_csv(index=False).encode("utf-8-sig"),
-                    file_name="dienmayxanh_products.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                )
-            with c3:
-                st.download_button(
-                    "⬇️ Tải JSON",
-                    data=json.dumps(ok_results, ensure_ascii=False, indent=2),
-                    file_name="dienmayxanh_products.json",
-                    mime="application/json",
-                    use_container_width=True,
-                )
+
+            st.download_button(
+                "⬇️ Tải JSON (toàn bộ dữ liệu thô, cho dev)",
+                data=json.dumps(ok_results, ensure_ascii=False, indent=2),
+                file_name="dienmayxanh_products.json",
+                mime="application/json",
+            )
 
             st.divider()
-            st.markdown("**📦 Tải ảnh về (ZIP)**")
+            st.markdown("**📦 Tải ảnh gốc về (ZIP file ảnh thật)**")
             st.caption(
                 "Tải toàn bộ ảnh gallery của các sản phẩm đã lấy thành 1 file ZIP duy nhất — mỗi "
                 "sản phẩm 1 thư mục con đặt theo tên sản phẩm, được nhóm theo category."
