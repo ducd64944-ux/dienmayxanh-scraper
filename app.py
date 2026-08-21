@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -662,51 +663,89 @@ if "results" in st.session_state:
             st.markdown("**📦 Tải ảnh gốc về (ZIP file ảnh thật)**")
             st.caption(
                 "Tải toàn bộ ảnh gallery của các sản phẩm đã lấy thành 1 file ZIP duy nhất — mỗi "
-                "sản phẩm 1 thư mục con đặt theo tên sản phẩm, được nhóm theo category."
+                "sản phẩm 1 thư mục con đặt theo tên sản phẩm, được nhóm theo category. Việc tải "
+                "ảnh chạy ngay trong trình duyệt của bạn (không qua server) vì CDN ảnh của "
+                "dienmayxanh.com chặn tải tự động từ server ngoài."
             )
-            if st.button("🖼️ Chuẩn bị file ZIP ảnh"):
-                zip_buf = io.BytesIO()
-                used_names = set()
-                total = sum(len(r["gallery"]) for r in ok_results)
-                dl_progress = st.progress(0.0, text="Đang tải ảnh...")
-                done = 0
-                with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                    for (cate_id, cate_name), items in sorted(groups.items(), key=lambda kv: kv[0][1]):
-                        cate_folder = safe_folder_name(cate_name, f"category-{cate_id}")
-                        for r in items:
-                            base_name = safe_folder_name(r["name"], r.get("product_id") or r["input"])
-                            folder_name = f"{base_name} (ID {r.get('product_id') or r['input']})"
-                            n = 1
-                            candidate = folder_name
-                            while candidate in used_names:
-                                n += 1
-                                candidate = f"{folder_name} ({n})"
-                            used_names.add(candidate)
-                            product_folder = candidate
 
-                            for idx, img_url in enumerate(r["gallery"], 1):
-                                try:
-                                    img_resp = session.get(img_url, timeout=20)
-                                    if img_resp.status_code == 200:
-                                        ext = re.search(r"\.(\w+)(?:\?.*)?$", img_url)
-                                        ext = ext.group(1) if ext else "jpg"
-                                        arcname = f"{cate_folder}/{product_folder}/{idx:02d}.{ext}"
-                                        zf.writestr(arcname, img_resp.content)
-                                except Exception:  # noqa: BLE001
-                                    pass
-                                done += 1
-                                if total:
-                                    dl_progress.progress(done / total, text=f"Đang tải ảnh... {done}/{total}")
-                dl_progress.empty()
-                zip_buf.seek(0)
-                st.session_state["image_zip"] = zip_buf.getvalue()
-                st.success("Đã chuẩn bị xong file ZIP ảnh, bấm nút bên dưới để tải về.")
+            zip_items = []
+            used_names_js = set()
+            for (cate_id, cate_name), items in sorted(groups.items(), key=lambda kv: kv[0][1]):
+                cate_folder = safe_folder_name(cate_name, f"category-{cate_id}")
+                for r in items:
+                    if not r["gallery"]:
+                        continue
+                    base_name = safe_folder_name(r["name"], r.get("product_id") or r["input"])
+                    folder_name = f"{base_name} (ID {r.get('product_id') or r['input']})"
+                    n = 1
+                    candidate = folder_name
+                    while candidate in used_names_js:
+                        n += 1
+                        candidate = f"{folder_name} ({n})"
+                    used_names_js.add(candidate)
+                    zip_items.append(
+                        {"cate": cate_folder, "product": candidate, "images": r["gallery"]}
+                    )
 
-            if "image_zip" in st.session_state:
-                st.download_button(
-                    "⬇️ Tải ZIP ảnh (theo category / tên sản phẩm)",
-                    data=st.session_state["image_zip"],
-                    file_name="dienmayxanh_images.zip",
-                    mime="application/zip",
-                    use_container_width=True,
-                )
+            zip_items_json = json.dumps(zip_items, ensure_ascii=False)
+            components.html(
+                f"""
+<div style="font-family:Inter,-apple-system,'Segoe UI',sans-serif;">
+  <button id="dmxZipBtn" style="background:#e30613;color:#fff;border:none;padding:11px 20px;
+    border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;width:100%;">
+    🖼️ Tải ZIP ảnh (chạy trong trình duyệt của bạn)
+  </button>
+  <div id="dmxZipStatus" style="margin-top:8px;font-size:13px;color:#666;"></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+const DMX_ITEMS = {zip_items_json};
+document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
+  const btn = document.getElementById('dmxZipBtn');
+  const status = document.getElementById('dmxZipStatus');
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+  const zip = new JSZip();
+  let total = 0, done = 0, failed = 0;
+  DMX_ITEMS.forEach(it => total += it.images.length);
+  if (total === 0) {{
+    status.textContent = 'Không có ảnh nào để tải.';
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    return;
+  }}
+  for (const it of DMX_ITEMS) {{
+    for (let i = 0; i < it.images.length; i++) {{
+      const url = it.images[i];
+      try {{
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const blob = await resp.blob();
+        const extMatch = url.match(/\\.(\\w+)(?:\\?.*)?$/);
+        const ext = extMatch ? extMatch[1] : 'jpg';
+        const num = String(i + 1).padStart(2, '0');
+        zip.file(it.cate + '/' + it.product + '/' + num + '.' + ext, blob);
+      }} catch (e) {{
+        failed++;
+      }}
+      done++;
+      status.textContent = 'Đang tải ảnh... ' + done + '/' + total + (failed ? ' (' + failed + ' lỗi)' : '');
+    }}
+  }}
+  status.textContent = 'Đang nén file ZIP...';
+  const content = await zip.generateAsync({{type: 'blob'}});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(content);
+  a.download = 'dienmayxanh_images.zip';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  status.textContent = 'Xong! Đã tải ' + (total - failed) + '/' + total + ' ảnh vào file ZIP.'
+    + (failed ? ' (' + failed + ' ảnh lỗi.)' : '');
+  btn.disabled = false;
+  btn.style.opacity = '1';
+}});
+</script>
+""",
+                height=90,
+            )
