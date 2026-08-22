@@ -417,17 +417,22 @@ def _parse_columns_text(columns_text: str):
     return cols
 
 
-def merge_local_category_config(cat_config, local_rows):
+def merge_local_category_config(cat_config, local_rows, fallback_names=None):
     """Overlay locally-entered category rows (list of dicts with cate_id,
     cate_name, columns_text) on top of the live-Google-Sheet cat_config. Local
-    rows add/extend columns for a category; they never remove existing ones."""
+    rows add/extend columns for a category; they never remove existing ones.
+    If a row leaves cate_name blank, it's auto-inferred from `fallback_names`
+    (a {cate_id: cate_name} lookup — typically built from the site's own
+    breadcrumb name, seen while scraping, and/or the THUỘC TÍNH CMS/PIM sheet)
+    so the user only has to type/upload the cate_id."""
+    fallback_names = fallback_names or {}
     cat_config = {k: {"name": v["name"], "columns": list(v["columns"])} for k, v in cat_config.items()}
     for row in local_rows or []:
         cate_id = str(row.get("cate_id") or "").strip()
         if not cate_id:
             continue
         new_cols = _parse_columns_text(row.get("columns_text"))
-        cate_name = str(row.get("cate_name") or "").strip()
+        cate_name = str(row.get("cate_name") or "").strip() or fallback_names.get(cate_id, "")
         if cate_id in cat_config:
             existing_codes = {c for c, _ in cat_config[cate_id]["columns"]}
             for c, v in new_cols:
@@ -1222,7 +1227,9 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                     key="local_cat_editor",
                     column_config={
                         "cate_id": st.column_config.TextColumn("cate_id (web hoặc CMS)", width="small"),
-                        "cate_name": st.column_config.TextColumn("Tên category"),
+                        "cate_name": st.column_config.TextColumn(
+                            "Tên category (để trống cũng được, tool tự suy ra từ cate_id)"
+                        ),
                         "columns_text": st.column_config.TextColumn(
                             "Cột PIM (mã:Tên; mã:Tên; ...)", width="large"
                         ),
@@ -1325,7 +1332,16 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                     else:
                         local_cat_rows = st.session_state.local_cat_data.fillna("").to_dict("records")
                         local_map_rows = st.session_state.local_map_data.fillna("").to_dict("records")
-                        cat_config = merge_local_category_config(cat_config, local_cat_rows)
+                        # cate_name auto-inferred from cate_id when left blank: prefer the
+                        # name actually seen on the site while scraping (breadcrumb), fall
+                        # back to whatever THUỘC TÍNH CMS/PIM already knows for that id.
+                        fallback_names = dict(cate_id_to_name)
+                        for r in ok_results:
+                            cid = str(r.get("cate_id") or "").strip()
+                            cname = r.get("cate_name") or ""
+                            if cid and cname:
+                                fallback_names[cid] = cname
+                        cat_config = merge_local_category_config(cat_config, local_cat_rows, fallback_names)
                         mapping_by_cate = merge_local_mapping(mapping_by_cate, local_map_rows)
 
                         sheets, unmatched_cate, unmatched_attrs = convert_results_to_pim(
