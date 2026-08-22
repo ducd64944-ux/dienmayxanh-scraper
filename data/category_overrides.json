@@ -3,5 +3,10 @@
     "cate_id": "7358",
     "cate_name": "Bóng đèn led",
     "columns_text": "brand_of_tskt_master:Thương hiệu của; color_rendering_index_tskt_master:Chỉ số hoàn màu; deep_tskt_master:Sâu; high_tskt_master:Cao; horizontal_tskt_master:Ngang; lamp_lifespan_tskt_master:Tuổi thọ đèn; lamp_size_tskt_master:Kích thước đèn; light_color_tskt_master:Màu sắc ánh sáng; luminous_efficacy_tskt_master:Hiệu suất sáng; luminous_flux_tskt_master:Quang thông; made_in_tskt_master:Sản xuất tại; operating_frequency_tskt_master:Tần số hoạt động; power_tskt_master:Công suất; product_type_tskt_master:Loại sản phẩm; utilities_tskt_master:Tiện ích; voltage_tskt_master:Điện áp"
+  },
+  {
+    "cate_id": "2322",
+    "cate_name": "Máy làm sữa hạt",
+    "columns_text": "body_material_tskt_master:Chất liệu thân vỏ; brand_of_tskt_master:Thương hiệu của; capacity_tskt_master:Dung lượng; control_panel_tskt_master:Bảng điều khiển; engine_materials_tskt_master:Chất liệu động cơ; function_tskt_master:Chức năng; jar_material_tskt_master:Chất liệu cối; made_in_tskt_master:Sản xuất tại; output_power_tskt_master:Công suất đầu ra; product_type_tskt_master:Loại sản phẩm; release_date_tskt_master:Thời gian ra mắt; size_weight_tskt_master:Kích thước Khối lượng; utilities_tskt_master:Tiện ích"
   }
 ]
