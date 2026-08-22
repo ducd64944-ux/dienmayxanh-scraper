@@ -488,6 +488,40 @@ def read_override_excel(file, expected_cols):
     return df
 
 
+def read_category_columns_excel(file):
+    """Read a category-config xlsx laid out the same way the user already
+    maintains it: col A = CATEGORY ID, col B = CATEGORY NAME, then col C
+    onwards = "danh sách TSKT (ngang, mỗi ô 1 mã)" — 2 rows per category (a
+    codes row, immediately followed by a Vietnamese-names row with cate_id/
+    cate_name left blank), exactly like the CẤU HÌNH CATEGORY tab on Google
+    Sheet. Returns a DataFrame in local_cat_data's shape (1 row per category,
+    columns_text = "code1:Tên 1;code2:Tên 2;..."), ready to merge straight
+    into the local override table."""
+    raw = pd.read_excel(file, header=None).fillna("").astype(str)
+    rows = raw.values.tolist()
+    if rows and "category id" in rows[0][0].strip().lower():
+        rows = rows[1:]
+    out = []
+    i = 0
+    while i + 1 < len(rows):
+        code_row, name_row = rows[i], rows[i + 1]
+        cate_id = code_row[0].strip() if len(code_row) > 0 else ""
+        cate_name = code_row[1].strip() if len(code_row) > 1 else ""
+        if not cate_id:
+            i += 1
+            continue
+        cols = []
+        for c_idx in range(2, max(len(code_row), len(name_row))):
+            code = code_row[c_idx].strip() if c_idx < len(code_row) else ""
+            vname = name_row[c_idx].strip() if c_idx < len(name_row) else ""
+            if not code:
+                break
+            cols.append(f"{code}:{vname or code}")
+        out.append({"cate_id": cate_id, "cate_name": cate_name, "columns_text": ";".join(cols)})
+        i += 2
+    return pd.DataFrame(out, columns=["cate_id", "cate_name", "columns_text"])
+
+
 def match_category(r, cat_config, cate_name_to_id):
     """Find the CẤU HÌNH CATEGORY entry for a scraped product: try the scraped
     cate_id directly first, then fall back to matching by normalized category
@@ -1195,21 +1229,21 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                     },
                 )
                 cat_xlsx = st.file_uploader(
-                    "📂 Hoặc nạp nhanh từ file Excel (cột: cate_id, cate_name, columns_text — "
-                    "không đúng tên cột thì tool lấy theo đúng thứ tự 3 cột đầu)",
+                    "📂 Hoặc nạp nhanh từ file Excel — đúng định dạng bạn đang dùng: cột A = "
+                    "CATEGORY ID, cột B = CATEGORY NAME, từ cột C là danh sách mã TSKT (ngang, mỗi "
+                    "ô 1 mã) — cứ 2 dòng cho 1 category (dòng mã, rồi dòng tên tương ứng bên dưới, "
+                    "giống hệt sheet CẤU HÌNH CATEGORY của bạn)",
                     type=["xlsx", "xls"],
                     key="local_cat_xlsx_uploader",
                 )
                 if cat_xlsx is not None:
                     try:
-                        new_rows = read_override_excel(
-                            cat_xlsx, ["cate_id", "cate_name", "columns_text"]
-                        )
+                        new_rows = read_category_columns_excel(cat_xlsx)
                         st.session_state.local_cat_data = (
                             pd.concat([st.session_state.local_cat_data, new_rows], ignore_index=True)
                             .drop_duplicates(subset=["cate_id"], keep="last")
                         )
-                        st.caption(f"✅ Đã nạp {len(new_rows)} dòng category từ file Excel vào bảng trên.")
+                        st.caption(f"✅ Đã nạp {len(new_rows)} category từ file Excel vào bảng trên.")
                     except Exception as e:  # noqa: BLE001
                         st.error(f"Không đọc được file Excel: {e}")
 
