@@ -1,3 +1,4 @@
+import csv
 import io
 import json
 import re
@@ -289,6 +290,252 @@ def build_images_workbook(items) -> bytes:
     return buf.getvalue()
 
 
+# ---------------------------------------------------------------------------
+# CMS (web) -> PIM conversion — reads the "CẤU HÌNH CATEGORY" and
+# "THUỘC TÍNH CMS/PIM" tabs LIVE from the shared Google Sheet (kept up to
+# date by the team) instead of a bundled snapshot, since that sheet is
+# edited continuously. Output values are raw TEXT (no more DATA PIM /
+# option-code lookup) per current process.
+# ---------------------------------------------------------------------------
+PIM_SHEET_ID = "1f2rFnEnVljtNqoG6BCGea7EBuf-OA030HwZURk4ZmY0"
+PIM_GID_CATEGORY_CONFIG = "785786646"   # tab: CẤU HÌNH CATEGORY
+PIM_GID_CMSPIM_MAPPING = "1125732962"   # tab: THUỘC TÍNH CMS/PIM
+PIM_MULTI_JOIN = "|"
+
+
+def _pim_csv_url(gid: str) -> str:
+    return (
+        f"https://docs.google.com/spreadsheets/d/{PIM_SHEET_ID}/gviz/tq"
+        f"?tqx=out:csv&gid={gid}"
+    )
+
+
+def _norm_attr(s) -> str:
+    if s is None:
+        return ""
+    s = str(s).strip()
+    s = re.sub(r"\s+", " ", s)
+    return s.lower()
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def load_category_config():
+    """Return {cate_id_str: {"name": str, "columns": [(code, viet_name), ...]}}."""
+    resp = requests.get(_pim_csv_url(PIM_GID_CATEGORY_CONFIG), timeout=20)
+    resp.raise_for_status()
+    rows = list(csv.reader(io.StringIO(resp.content.decode("utf-8-sig"))))
+    rows = rows[1:]  # drop header row
+    config = {}
+    i = 0
+    while i + 1 < len(rows):
+        code_row, name_row = rows[i], rows[i + 1]
+        cate_id = (code_row[0] if len(code_row) > 0 else "").strip()
+        cate_name = (code_row[1] if len(code_row) > 1 else "").strip()
+        if cate_id:
+            cols = []
+            for c_idx in range(2, max(len(code_row), len(name_row))):
+                code = code_row[c_idx].strip() if c_idx < len(code_row) else ""
+                vname = name_row[c_idx].strip() if c_idx < len(name_row) else ""
+                if not code:
+                    break
+                cols.append((code, vname or code))
+            config[cate_id] = {"name": cate_name, "columns": cols}
+        i += 2
+    return config
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def load_cmspim_mapping():
+    """Return:
+       by_cate: {cate_id_str: {norm_attr_name: pim_code}}
+       cate_name_to_id: {norm(cate_name): cate_id_str}   (fallback lookup)
+       cate_id_to_name: {cate_id_str: cate_name}
+    Robust to both the legacy header (MÃ THUỘC TÍNH PIM / TÊN THUỘC TÍNH PIM)
+    and the newer one (MÃ MASTER / TÊN MASTER), and skips "▶ NHÓM: ..."
+    section-divider rows and rows with no target code yet (still unmapped).
+    """
+    resp = requests.get(_pim_csv_url(PIM_GID_CMSPIM_MAPPING), timeout=20)
+    resp.raise_for_status()
+    rows = list(csv.reader(io.StringIO(resp.content.decode("utf-8-sig"))))
+    if not rows:
+        return {}, {}, {}
+    header = [h.strip() for h in rows[0]]
+
+    def find_col(*names):
+        for name in names:
+            if name in header:
+                return header.index(name)
+        return None
+
+    idx_cate_id = find_col("MÃ NGÀNH HÀNG CMS")
+    idx_cate_name = find_col("TÊN NGÀNH HÀNG CMS")
+    idx_attr_name = find_col("TÊN THUỘC TÍNH TSKT")
+    idx_code = find_col("MÃ MASTER", "MÃ THUỘC TÍNH PIM")
+    if None in (idx_cate_id, idx_cate_name, idx_attr_name, idx_code):
+        return {}, {}, {}
+
+    by_cate = defaultdict(dict)
+    cate_name_to_id = {}
+    cate_id_to_name = {}
+    for r in rows[1:]:
+        if len(r) <= max(idx_cate_id, idx_cate_name, idx_attr_name, idx_code):
+            continue
+        cate_id = r[idx_cate_id].strip()
+        cate_name = r[idx_cate_name].strip()
+        attr_name = r[idx_attr_name].strip()
+        code = r[idx_code].strip()
+        if not cate_id:
+            continue
+        cate_id_to_name.setdefault(cate_id, cate_name)
+        if cate_name:
+            cate_name_to_id.setdefault(_norm_attr(cate_name), cate_id)
+        # skip "▶ NHÓM: ..." section-divider rows and not-yet-mapped attrs
+        if attr_name.startswith("▶") or "NHÓM" in attr_name.upper():
+            continue
+        if not code or not attr_name:
+            continue
+        by_cate[cate_id].setdefault(_norm_attr(attr_name), code)
+    return dict(by_cate), cate_name_to_id, cate_id_to_name
+
+
+def match_category(r, cat_config, cate_name_to_id):
+    """Find the CẤU HÌNH CATEGORY entry for a scraped product: try the scraped
+    cate_id directly first, then fall back to matching by normalized category
+    name (site CMS ids and PIM-mapping-sheet ids aren't guaranteed to line up)."""
+    cate_id = str(r.get("cate_id") or "").strip()
+    if cate_id and cate_id in cat_config:
+        return cate_id
+    cate_name_norm = _norm_attr(r.get("cate_name") or "")
+    if cate_name_norm and cate_name_norm in cate_name_to_id:
+        mapped_id = cate_name_to_id[cate_name_norm]
+        if mapped_id in cat_config:
+            return mapped_id
+    return None
+
+
+def convert_results_to_pim(ok_results, cat_config, mapping_by_cate, cate_name_to_id, cate_id_to_name):
+    """Build PIM text-only conversion. Returns:
+       sheets: {cate_key: {"columns": [...], "rows": [dict], "label": str}}
+       unmatched_category: [r, ...]  (product's category not found in CẤU HÌNH CATEGORY)
+       unmatched_attrs: [{"cate": str, "product": str, "attr": str, "value": str}, ...]
+    """
+    sheets = {}
+    unmatched_category = []
+    unmatched_attrs = []
+
+    for r in ok_results:
+        cfg_cate_id = match_category(r, cat_config, cate_name_to_id)
+        if not cfg_cate_id:
+            unmatched_category.append(r)
+            continue
+
+        cfg = cat_config[cfg_cate_id]
+        columns = cfg["columns"]
+        # CẤU HÌNH CATEGORY and THUỘC TÍNH CMS/PIM are separate tabs — their category
+        # ids aren't guaranteed to line up, so fall back to matching by category name.
+        attr_map = mapping_by_cate.get(cfg_cate_id)
+        if not attr_map:
+            alt_id = next(
+                (cid for cid, nm in cate_id_to_name.items() if _norm_attr(nm) == _norm_attr(cfg["name"])),
+                None,
+            )
+            attr_map = mapping_by_cate.get(alt_id, {}) if alt_id else {}
+
+        row_values = defaultdict(list)  # code -> [values...] (handles "gộp" — multiple
+        # CMS spec rows mapping to the same PIM code get combined here)
+        for spec_name, spec_value in r["specs"].items():
+            spec_value = (spec_value or "").strip()
+            if not spec_value:
+                continue
+            code = attr_map.get(_norm_attr(spec_name))
+            if not code:
+                unmatched_attrs.append(
+                    {"cate": cfg["name"] or cfg_cate_id, "product": r["name"], "attr": spec_name, "value": spec_value}
+                )
+                continue
+            if spec_value not in row_values[code]:
+                row_values[code].append(spec_value)
+
+        out_row = {"model_code": "", "sku": "", "category_code": "", "variant_code": ""}
+        out_row["_product_name"] = r["name"]
+        out_row["_product_url"] = r["url"]
+        out_row["_product_id"] = r.get("product_id") or r["input"]
+        for code, _vname in columns:
+            out_row[code] = PIM_MULTI_JOIN.join(row_values.get(code, []))
+
+        key = cfg_cate_id
+        if key not in sheets:
+            sheets[key] = {"columns": columns, "rows": [], "label": cfg["name"] or cfg_cate_id}
+        sheets[key]["rows"].append(out_row)
+
+    return sheets, unmatched_category, unmatched_attrs
+
+
+def build_pim_workbook(sheets, unmatched_category, unmatched_attrs) -> bytes:
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    id_cols = ["model_code", "sku", "category_code", "variant_code"]
+    ref_cols = ["_product_id", "_product_name", "_product_url"]
+
+    for cate_key, info in sheets.items():
+        title = safe_folder_name(info["label"], cate_key)[:31] or cate_key
+        n = 1
+        base_title = title
+        existing = {ws.title for ws in wb.worksheets}
+        while title in existing:
+            n += 1
+            title = f"{base_title[:28]}_{n}"
+        ws = wb.create_sheet(title)
+
+        codes = [c for c, _ in info["columns"]]
+        names = [n for _, n in info["columns"]]
+        header1 = id_cols + codes + ref_cols
+        header2 = (
+            ["Mã model", "Mã sản phẩm ERP", "Mã danh mục PIM", "Mã biến thể"]
+            + names
+            + ["Mã SP (tham chiếu)", "Tên sản phẩm (tham chiếu)", "URL (tham chiếu)"]
+        )
+        ws.append(header1)
+        ws.append(header2)
+        for r in (1, 2):
+            for c in range(1, len(header1) + 1):
+                cell = ws.cell(row=r, column=c)
+                cell.font = WHITE_BOLD if r == 1 else LABEL_BOLD
+                cell.fill = ACCENT_FILL if r == 1 else SOFT_FILL
+                cell.alignment = WRAP_TOP
+
+        for row in info["rows"]:
+            ws.append([row.get(c, "") for c in header1])
+
+        for i, c in enumerate(header1, 1):
+            ws.column_dimensions[get_column_letter(i)].width = (
+                12 if c in id_cols else (40 if c in ref_cols else 26)
+            )
+        ws.freeze_panes = "A3"
+
+    if unmatched_category:
+        ws = wb.create_sheet("Chưa xác định category")
+        ws.append(["Mã SP", "Tên sản phẩm", "cate_id (web)", "cate_name (web)", "URL"])
+        for r in unmatched_category:
+            ws.append([r.get("product_id") or r["input"], r["name"], r.get("cate_id"), r.get("cate_name"), r["url"]])
+        ws.freeze_panes = "A2"
+
+    if unmatched_attrs:
+        ws = wb.create_sheet("Thuộc tính chưa map")
+        ws.append(["Category", "Sản phẩm", "Tên thuộc tính (web)", "Giá trị"])
+        for e in unmatched_attrs:
+            ws.append([e["cate"], e["product"], e["attr"], e["value"]])
+        for i, w in enumerate([22, 40, 30, 40], 1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+        ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 def scrape_one(session: requests.Session, entry: str, retries: int = 2):
     entry = entry.strip()
     if not entry:
@@ -493,6 +740,8 @@ if run:
     st.session_state["results"] = results
     st.session_state.pop("image_zip", None)
     st.session_state.pop("export_zip", None)
+    st.session_state.pop("pim_workbook", None)
+    st.session_state.pop("pim_stats", None)
 
 if "results" in st.session_state:
     results = st.session_state["results"]
@@ -526,8 +775,8 @@ if "results" in st.session_state:
                 if k not in spec_keys:
                     spec_keys.append(k)
 
-        tab_cards, tab_table, tab_export = st.tabs(
-            ["🗂️ Theo Category", "📋 Bảng dữ liệu", "⬇️ Xuất dữ liệu"]
+        tab_cards, tab_table, tab_export, tab_pim = st.tabs(
+            ["🗂️ Theo Category", "📋 Bảng dữ liệu", "⬇️ Xuất dữ liệu", "🔄 Chuyển đổi PIM"]
         )
 
         # ---- Tab 1: card grid grouped by category, with live search ----
@@ -751,3 +1000,61 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
 """,
                 height=90,
             )
+
+        # ---- Tab 4: convert scraped TSKT -> PIM import (text-only) ----
+        with tab_pim:
+            st.markdown("**🔄 Chuyển đổi TSKT vừa lấy sang định dạng PIM**")
+            st.caption(
+                "Dựa trên 2 sheet **CẤU HÌNH CATEGORY** và **THUỘC TÍNH CMS/PIM** lấy trực tiếp "
+                "(live) từ Google Sheet — bạn cập nhật bên đó là tool dùng ngay bản mới nhất, "
+                "không cần upload lại gì cả. Giá trị xuất ra là **text thô** (không mã hoá số), "
+                "nhiều dòng CMS map cùng 1 cột PIM sẽ được gộp và nối bằng dấu `|`. "
+                "`model_code / sku / category_code / variant_code` để trống — bạn tự nhập sau."
+            )
+            if st.button("🔄 Chuyển đổi sang PIM", use_container_width=True, type="primary"):
+                try:
+                    with st.spinner("Đang tải cấu hình category + mapping CMS/PIM từ Google Sheet..."):
+                        cat_config = load_category_config()
+                        mapping_by_cate, cate_name_to_id, cate_id_to_name = load_cmspim_mapping()
+                    if not cat_config or not mapping_by_cate:
+                        st.error(
+                            "Không tải được dữ liệu cấu hình từ Google Sheet (trống hoặc đổi cấu trúc "
+                            "cột). Kiểm tra lại sheet rồi thử lại."
+                        )
+                    else:
+                        sheets, unmatched_cate, unmatched_attrs = convert_results_to_pim(
+                            ok_results, cat_config, mapping_by_cate, cate_name_to_id, cate_id_to_name
+                        )
+                        st.session_state["pim_workbook"] = build_pim_workbook(
+                            sheets, unmatched_cate, unmatched_attrs
+                        )
+                        st.session_state["pim_stats"] = {
+                            "matched_products": sum(len(v["rows"]) for v in sheets.values()),
+                            "categories": len(sheets),
+                            "unmatched_category": len(unmatched_cate),
+                            "unmatched_attrs": len(unmatched_attrs),
+                        }
+                        st.success("Đã chuyển đổi xong, xem kết quả bên dưới.")
+                except requests.exceptions.RequestException as e:
+                    st.error(f"Không kết nối được tới Google Sheet: {e}")
+
+            if "pim_stats" in st.session_state:
+                stats = st.session_state["pim_stats"]
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("✅ Sản phẩm đã map", stats["matched_products"])
+                c2.metric("🗂️ Category ra file", stats["categories"])
+                c3.metric("❓ Không xác định category", stats["unmatched_category"])
+                c4.metric("⚠️ Thuộc tính chưa map", stats["unmatched_attrs"])
+                if stats["unmatched_category"] or stats["unmatched_attrs"]:
+                    st.caption(
+                        "Chi tiết các trường hợp trên nằm trong sheet "
+                        "\"Chưa xác định category\" / \"Thuộc tính chưa map\" của file tải về — "
+                        "bạn bổ sung vào Google Sheet rồi chuyển đổi lại."
+                    )
+                st.download_button(
+                    "⬇️ Tải file PIM (xlsx, 1 sheet / category)",
+                    data=st.session_state["pim_workbook"],
+                    file_name="dienmayxanh_pim_import.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
