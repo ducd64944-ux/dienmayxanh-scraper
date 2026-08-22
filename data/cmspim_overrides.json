@@ -1,1 +1,872 @@
-[]
+[
+  {
+    "cate_id": "coverage_area_tskt_master",
+    "cms_attr_name": "Diện tích sử dụng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "max_suction_tskt_master",
+    "cms_attr_name": "Lực hút tối đa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "map_capacity_tskt_master",
+    "cms_attr_name": "Lưu được bao nhiêu bản đồ",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "obstacle_climb_tskt_master",
+    "cms_attr_name": "Khả năng vượt vật cản",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "mop_lift_auto_tskt_master",
+    "cms_attr_name": "Tự động nâng giẻ lau",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "brush_type_tskt_master",
+    "cms_attr_name": "Loại chổi chính",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "dustbag_capacity_tskt_master",
+    "cms_attr_name": "Dung tích túi rác trạm",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "floor_cleaner_tskt_master",
+    "cms_attr_name": "Nước lau sàn được sử dụng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "obstacle_avoidance_tskt_master",
+    "cms_attr_name": "Công nghệ tránh né vật cản",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "vacuum_mop_tech_tskt_master",
+    "cms_attr_name": "Công nghệ hút và lau",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "wash_dry_mop_tskt_master",
+    "cms_attr_name": "Tự giặt giẻ - Sấy khô",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "auto_water_kit_tskt_master",
+    "cms_attr_name": "Bộ cấp thoát nước tự động",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "shave_type_tskt_master",
+    "cms_attr_name": "Kiểu cạo",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "blade_count_tskt_master",
+    "cms_attr_name": "Số lưỡi cạo",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "blade_type_tskt_master",
+    "cms_attr_name": "Lưỡi cạo",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "comb_length_tskt_master",
+    "cms_attr_name": "Độ dài cữ lược",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "skin_type_tskt_master",
+    "cms_attr_name": "Dùng được cho da",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "waist_use_tskt_master",
+    "cms_attr_name": "Dùng cho vòng eo",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "number_of_levels_tskt_master",
+    "cms_attr_name": "Số cấp độ",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "operation_mode_tskt_master",
+    "cms_attr_name": "Chế độ",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "compatible_model_tskt_master",
+    "cms_attr_name": "Sử dụng cho sản phẩm",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "replaceable_head_tskt_master",
+    "cms_attr_name": "Thay đầu bàn chải",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "speed_level_tskt_master",
+    "cms_attr_name": "Tốc độ",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "nozzle_count_tskt_master",
+    "cms_attr_name": "Số đầu tăm",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "charging_type_tskt_master",
+    "cms_attr_name": "Kiểu sạc",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "flywheel_weight_tskt_master",
+    "cms_attr_name": "Khối lượng bánh đà",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "speed_level_tskt_master",
+    "cms_attr_name": "Tốc độ sấy",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "heat_mode_tskt_master",
+    "cms_attr_name": "Chế độ nhiệt",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "shaver_blade_tskt_master",
+    "cms_attr_name": "Lưỡi sắt",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "brush_head_replacement_tskt_master",
+    "cms_attr_name": "Thời gian thay thế đầu bàn chải",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "age_of_use_tskt_master",
+    "cms_attr_name": "Độ tuổi sử dụng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "target_users_tskt_master",
+    "cms_attr_name": "Đối tượng sử dụng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "appropriate_height_tskt_master",
+    "cms_attr_name": "Chiều cao phù hợp",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "chair_frame_material_tskt_master",
+    "cms_attr_name": "Chất liệu khung xương ghế",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "cushion_material_carpet_tskt_master",
+    "cms_attr_name": "Chất liệu đệm, thảm lót",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "brush_bristle_material_tskt_master",
+    "cms_attr_name": "Chất liệu lông cọ",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "handle_size_tskt_master",
+    "cms_attr_name": "Kích thước tay cầm",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "hook_clip_count_tskt_master",
+    "cms_attr_name": "Số móc/kẹp",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "replacement_recommendation_tskt_master",
+    "cms_attr_name": "Khuyến nghị thay thế",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "package_contents_tskt_master",
+    "cms_attr_name": "Bộ sản phẩm bao gồm",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "mixing_ratio_tskt_master",
+    "cms_attr_name": "Tỉ lệ pha",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "usage_instructions_tskt_master",
+    "cms_attr_name": "Hướng dẫn sử dụng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "expiration_date_tskt_master",
+    "cms_attr_name": "Hạn sử dụng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "luminous_flux_tskt_master",
+    "cms_attr_name": "Quang thông",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "luminous_efficacy_tskt_master",
+    "cms_attr_name": "Hiệu suất sáng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "color_rendering_index_tskt_master",
+    "cms_attr_name": "Chỉ số hoàn màu",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "jar_material_tskt_master",
+    "cms_attr_name": "Chất liệu cối",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "lid_opening_type_tskt_master",
+    "cms_attr_name": "Kiểu mở nắp",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "lid_opening_speed_tskt_master",
+    "cms_attr_name": "Tốc độ mở nắp",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "battery_opening_cycles_tskt_master",
+    "cms_attr_name": "Số lần đóng/mở pin",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "minimum_filtration_size_tskt_master",
+    "cms_attr_name": "Kích thước lọc nhỏ nhất",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "nonstick_pot_tskt_master",
+    "cms_attr_name": "Nồi chống dính",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "cooling_area_tskt_master",
+    "cms_attr_name": "Diện tích làm mát",
+    "pim_code": "Done"
+  },
+  {
+    "cate_id": "automatic_ice_making_tskt_master",
+    "cms_attr_name": "Làm đá tự động",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "size_with_base_tskt_master",
+    "cms_attr_name": "Kích thước có chân",
+    "pim_code": "Done"
+  },
+  {
+    "cate_id": "filtration_technology_tskt_master",
+    "cms_attr_name": "Công nghệ lọc",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "indoor_unit_weight_tskt_master",
+    "cms_attr_name": "Khối lượng dàn lạnh",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "outdoor_unit_weight_tskt_master",
+    "cms_attr_name": "Khối lượng dàn nóng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "rotation_speed_tskt_master",
+    "cms_attr_name": "Tốc độ vòng quay",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "pan_support_tskt_master",
+    "cms_attr_name": "Kiềng bếp",
+    "pim_code": "Done"
+  },
+  {
+    "cate_id": "grinding_capacity_per_batch_tskt_master",
+    "cms_attr_name": "Khối lượng 1 lần xay",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "grind_size_tskt_master",
+    "cms_attr_name": "Kích cỡ xay",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_suction_power_tskt_master",
+    "cms_attr_name": "Lực hút tối đa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "cleaning_mode_tskt_master",
+    "cms_attr_name": "Chế độ hút/lau",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "number_of_saved_maps_tskt_master",
+    "cms_attr_name": "Lưu được bao nhiêu bản đồ",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "obstacle_climbing_height_tskt_master",
+    "cms_attr_name": "Khả năng vượt vật cản",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "automatic_mop_lifting_tskt_master",
+    "cms_attr_name": "Tự động nâng giẻ lau",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "mop_type_tskt_master",
+    "cms_attr_name": "Loại giẻ lau",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "rotation_speed_tskt_master",
+    "cms_attr_name": "Tốc độ xoay",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "main_brush_type_tskt_master",
+    "cms_attr_name": "Loại chổi chính",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "dock_dust_bag_capacity_tskt_master",
+    "cms_attr_name": "Dung tích túi rác trạm",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "supported_floor_cleaning_solution_tskt_master",
+    "cms_attr_name": "Nước lau sàn được sử dụng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "language_tskt_master",
+    "cms_attr_name": "Ngôn ngữ",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "obstacle_avoidance_technology_tskt_master",
+    "cms_attr_name": "Công nghệ tránh né vật cản",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "automatic_mop_washing_and_drying_tskt_master",
+    "cms_attr_name": "Tự giặt giẻ - Sấy khô",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "automation_features_tskt_master",
+    "cms_attr_name": "Hỗ trợ tự động",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "automatic_water_supply_and_drainage_kit_tskt_master",
+    "cms_attr_name": "Bộ cấp thoát nước tự động",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_temperature_error_tskt_master",
+    "cms_attr_name": "Sai số tối đa của nhiệt độ",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_humidity_error_tskt_master",
+    "cms_attr_name": "Sai số tối đa của độ ẩm",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "hub_requirement_tskt_master",
+    "cms_attr_name": "Yêu cầu hub",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "compatible_hub_tskt_master",
+    "cms_attr_name": "Hub tương thích",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_devices_per_hub_tskt_master",
+    "cms_attr_name": "Quản lý tối đa trên 1 Hub",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "number_of_sensors_tskt_master",
+    "cms_attr_name": "Số đầu dò",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "indicator_led_tskt_master",
+    "cms_attr_name": "Leb báo hiệu",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "alarm_buzzer_tskt_master",
+    "cms_attr_name": "Còi thông báo",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "filtration_capacity_tskt_master",
+    "cms_attr_name": "Công suất lọc",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "treatment_capacity_tskt_master",
+    "cms_attr_name": "Khả năng xử lý",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "water_softening_capacity_tskt_master",
+    "cms_attr_name": "Khả năng làm mềm",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_iron_removal_capacity_tskt_master",
+    "cms_attr_name": "Khả năng loại bỏ sắt tối đa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "filter_pore_size_tskt_master",
+    "cms_attr_name": "Kích thước lỗ lọc",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "suitable_water_source_tskt_master",
+    "cms_attr_name": "Nguồn nước phù hợp",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "input_water_ph_tskt_master",
+    "cms_attr_name": "pH đầu vào",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_input_water_turbidity_tskt_master",
+    "cms_attr_name": "Độ đục đầu vào tối đa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "filter_cartridge_type_tskt_master",
+    "cms_attr_name": "Loại lõi lọc",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "main_filter_material_tskt_master",
+    "cms_attr_name": "Vật liệu lọc chính",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "operating_pressure_tskt_master",
+    "cms_attr_name": "Áp suất hoạt động",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "input_water_temperature_tskt_master",
+    "cms_attr_name": "Nhiệt độ nước vào",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "backwash_mechanism_tskt_master",
+    "cms_attr_name": "Cơ chế sục rửa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "backwash_cycle_tskt_master",
+    "cms_attr_name": "Chu kỳ sục rửa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "regeneration_cycle_tskt_master",
+    "cms_attr_name": "Chu kỳ hoàn nguyên",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "salt_tank_capacity_tskt_master",
+    "cms_attr_name": "Dung tích thùng muối",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "filter_replacement_cycle_tskt_master",
+    "cms_attr_name": "Chu kỳ thay lõi",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "booster_pump_power_tskt_master",
+    "cms_attr_name": "Công suất bơm tăng áp",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "control_valve_tskt_master",
+    "cms_attr_name": "Van điều khiển",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "wastewater_discharge_tskt_master",
+    "cms_attr_name": "Xả nước thải",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "output_water_standard_tskt_master",
+    "cms_attr_name": "Tiêu chuẩn nước đầu ra",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "uv_disinfection_tskt_master",
+    "cms_attr_name": "Khử khuẩn UV",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "number_of_doors_tskt_master",
+    "cms_attr_name": "Số cửa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_tray_load_tskt_master",
+    "cms_attr_name": "Tải trọng tối đa của khay",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "number_of_levels_tskt_master",
+    "cms_attr_name": "Số tầng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "number_of_trays_tskt_master",
+    "cms_attr_name": "Số khay",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "saw_blade_diameter_tskt_master",
+    "cms_attr_name": "Đường kính lưỡi cưa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "cutting_capacity_tskt_master",
+    "cms_attr_name": "Khả năng cắt",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "stroke_length_tskt_master",
+    "cms_attr_name": "Độ xọc",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "stroke_rate_tskt_master",
+    "cms_attr_name": "Nhịp cưa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_cutting_angle_tskt_master",
+    "cms_attr_name": "Góc cắt tối đa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "table_size_tskt_master",
+    "cms_attr_name": "Kích thước bàn",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "arbor_diameter_tskt_master",
+    "cms_attr_name": "Đường kính trục",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_cutting_height_tskt_master",
+    "cms_attr_name": "Chiều cao vật liệu cắt tối đa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_right_cutting_capacity_tskt_master",
+    "cms_attr_name": "Năng suất cắt tối đa về bên phải",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_cutting_diameter_in_wood_tskt_master",
+    "cms_attr_name": "Đường kính cắt tối đa trong gỗ (nhánh cây)",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "number_of_cuts_per_charge_tskt_master",
+    "cms_attr_name": "Số lần cắt/1 lần sạc",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "number_of_phases_tskt_master",
+    "cms_attr_name": "Số Pha",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "output_voltage_tskt_master",
+    "cms_attr_name": "Điện áp đầu ra",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "overload_and_short_circuit_protection_tskt_master",
+    "cms_attr_name": "Bảo vệ quá tải, ngắn mạch",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "insulation_resistance_tskt_master",
+    "cms_attr_name": "Điện trở cách điện",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "electrical_safety_class_tskt_master",
+    "cms_attr_name": "An toàn dây điện/vỏ máy",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "minimum_efficiency_tskt_master",
+    "cms_attr_name": "Hiệu suất tối thiểu",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "ambient_operating_temperature_tskt_master",
+    "cms_attr_name": "Nhiệt độ môi trường đặt máy",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "magnetic_core_material_tskt_master",
+    "cms_attr_name": "Chất liệu khung từ",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "input_cable_size_tskt_master",
+    "cms_attr_name": "Kích thước dây đầu vào",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "cooling_power_tskt_master",
+    "cms_attr_name": "Công suất làm lạnh",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "heating_power_tskt_master",
+    "cms_attr_name": "Công suất làm nóng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "fire_resistance_tskt_master",
+    "cms_attr_name": "Khả năng chống cháy",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "water_resistance_tskt_master",
+    "cms_attr_name": "Khả năng chống thấm",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "locking_system_tskt_master",
+    "cms_attr_name": "Hệ thống khoá",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "lock_system_battery_tskt_master",
+    "cms_attr_name": "Pin dùng cho hệ thống khoá",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "blade_diameter_tskt_master",
+    "cms_attr_name": "Đường kính lưỡi",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "arbor_hole_diameter_tskt_master",
+    "cms_attr_name": "Đường kính lỗ trục",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "cutting_width_tskt_master",
+    "cms_attr_name": "Độ rộng cắt",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_rotation_speed_tskt_master",
+    "cms_attr_name": "Vòng quay tối đa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "grit_size_tskt_master",
+    "cms_attr_name": "Độ hạt",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "number_of_teeth_tskt_master",
+    "cms_attr_name": "Số răng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "no_load_speed_tskt_master",
+    "cms_attr_name": "Tốc độ không tải",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "motor_type_tskt_master",
+    "cms_attr_name": "Loại động cơ",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "planing_width_tskt_master",
+    "cms_attr_name": "Bề rộng đường bào",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "planing_depth_tskt_master",
+    "cms_attr_name": "Độ sâu đường bào",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_solution_tank_capacity_tskt_master",
+    "cms_attr_name": "Bình chứa thuốc tối đa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "air_spray_speed_tskt_master",
+    "cms_attr_name": "Tốc độ phun khí",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "mist_particle_size_tskt_master",
+    "cms_attr_name": "Kích thước hạt sương",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "fermentation_power_tskt_master",
+    "cms_attr_name": "Công suất lên men",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "fermentation_time_tskt_master",
+    "cms_attr_name": "Thời gian lên men",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "folded_a_shape_height_tskt_master",
+    "cms_attr_name": "Chiều cao gập chữ A",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "height_to_top_step_tskt_master",
+    "cms_attr_name": "Chiều cao đến bậc trên cùng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "working_size_tskt_master",
+    "cms_attr_name": "Kích thước sử dụng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "i_shape_height_tskt_master",
+    "cms_attr_name": "Chiều cao chữ I",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_load_capacity_tskt_master",
+    "cms_attr_name": "Tải trọng chở hàng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "number_of_steps_tskt_master",
+    "cms_attr_name": "Số bậc",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "step_size_tskt_master",
+    "cms_attr_name": "Kích thước mặt bậc",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "step_spacing_tskt_master",
+    "cms_attr_name": "Khoảng cách giữa các bậc",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "folded_size_tskt_master",
+    "cms_attr_name": "Kích thước thu gọn",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "step_material_tskt_master",
+    "cms_attr_name": "Chất liệu bậc",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "tire_type_tskt_master",
+    "cms_attr_name": "Loại lốp",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "rim_material_tskt_master",
+    "cms_attr_name": "Chất liệu vành",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_range_per_charge_tskt_master",
+    "cms_attr_name": "Quãng đường đi được sau mỗi lần sạc đầy",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_speed_tskt_master",
+    "cms_attr_name": "Vận tốc đối đa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "brake_type_tskt_master",
+    "cms_attr_name": "Loại phanh (thắng)",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "headlight_type_tskt_master",
+    "cms_attr_name": "Loại đèn chiếu sáng",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "trunk_capacity_tskt_master",
+    "cms_attr_name": "Dung tích cốp xe",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "maximum_load_capacity_tskt_master",
+    "cms_attr_name": "Khả năng chịu tải tối đa",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "wheel_diameter_tskt_master",
+    "cms_attr_name": "Đường kính bánh xe",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "hill_climbing_ability_tskt_master",
+    "cms_attr_name": "Khả năng leo dốc",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "seat_height_tskt_master",
+    "cms_attr_name": "Độ cao yên xe",
+    "pim_code": ""
+  },
+  {
+    "cate_id": "ground_clearance_tskt_master",
+    "cms_attr_name": "Độ cao gầm xe",
+    "pim_code": ""
+  }
+]
