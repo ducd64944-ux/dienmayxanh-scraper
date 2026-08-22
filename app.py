@@ -5,7 +5,9 @@ import json
 import os
 import re
 import time
+import unicodedata
 import zipfile
+from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -439,6 +441,13 @@ def save_github_json(path: str, data, commit_message: str):
     return False, f"Lỗi GitHub API ({r.status_code}): {r.text[:300]}"
 
 
+def _vn_now_str() -> str:
+    """Giờ hiện tại theo múi giờ Việt Nam (UTC+7), dùng để hiển thị "lần lưu
+    gần nhất" — giúp theo dõi/lưu trữ thông tin tốt hơn (biết chắc dữ liệu
+    trên GitHub đã cập nhật lúc nào, tránh nhầm là chưa lưu)."""
+    return datetime.now(timezone(timedelta(hours=7))).strftime("%H:%M:%S %d/%m/%Y")
+
+
 def build_category_override_payload(local_cat_rows):
     """Chuẩn hoá bảng category đang sửa trong tool thành payload để lưu lên
     GitHub. LƯU Ý: bảng này đã được tự nạp sẵn từ GitHub lúc mở tool (xem chỗ
@@ -564,9 +573,25 @@ def _pim_csv_url(gid: str) -> str:
 def _norm_attr(s) -> str:
     if s is None:
         return ""
-    s = str(s).strip()
+    s = unicodedata.normalize("NFC", str(s)).strip()
     s = re.sub(r"\s+", " ", s)
     return s.lower()
+
+
+def clean_spec_value(v) -> str:
+    """Chuẩn hoá 1 giá trị/tên thuộc tính đọc được từ web hoặc từ file nạp vào:
+    - Unicode NFC (gộp tổ hợp dấu tiếng Việt về đúng 1 dạng duy nhất — 1 nguyên
+      nhân âm thầm gây "sai chính tả"/không khớp là do web trả về dấu tổ hợp
+      (NFD) khác với dữ liệu CMS/PIM đang ở dạng dựng sẵn (NFC), nhìn y hệt
+      nhau nhưng so sánh chuỗi thì KHÔNG khớp).
+    - Gộp khoảng trắng thừa (kể cả xuống dòng/tab lẫn trong chuỗi) về 1 dấu
+      cách, cắt khoảng trắng/dấu câu rác (":", "-", ";", ",", ".") ở đầu-cuối.
+    Đây là bước làm sạch CƠ HỌC (rule cố định), không tự "đoán" sửa nội dung.
+    """
+    s = unicodedata.normalize("NFC", str(v or ""))
+    s = re.sub(r"\s+", " ", s).strip()
+    s = s.strip(" \t\r\n-:;,.")
+    return s
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -884,42 +909,74 @@ def match_category(r, cat_config, cate_name_to_id):
     return None
 
 
-# Thuộc tính "ghép" (composite) trên web — vd 1 spec tên "Kích thước" có giá
-# trị dạng "Cao 33.2 - Ngang 18 - Sâu 15 (cm)" — thực ra là 4 thuộc tính PIM
-# RIÊNG BIỆT gộp lại (Cao/Ngang/Sâu/Khối lượng, mỗi cái có mã PIM khác nhau
-# trên sheet THUỘC TÍNH CMS/PIM, ví dụ high_tskt_master/horizontal_tskt_master/
-# deep_tskt_master/machine_weight_tskt_master). Regex bên dưới bắt các nhãn
-# kích thước/khối lượng thường gặp + số + đơn vị, tách thành từng cặp
-# (tên con, giá trị con) riêng để mỗi cái tự tra cứu mã PIM theo đúng tên của
-# nó — KHÔNG gộp chung vào 1 cột. Đây là bản v1 "best-effort" dựa theo cấu
-# trúc cột đã thấy trên PIM thật (Cao/Ngang/Sâu/Nặng); nếu định dạng chuỗi
-# thật trên web khác đi (ví dụ dùng "x" thay vì "-"), cần điều chỉnh lại regex
-# này theo dữ liệu mẫu thật — bấm vào cảnh báo "Thuộc tính chưa map" sau khi
-# chuyển đổi để xem tên spec gốc chưa tách được.
-_DIMENSION_LABEL_PATTERN = re.compile(
-    r"(Cao|Ngang|Rộng|Sâu|Dài|Nặng|Khối\s*lượng)\s*[:\-]?\s*([\d]+(?:[.,]\d+)?)\s*(cm|mm|m|kg|g)?",
-    re.IGNORECASE,
-)
-_DIMENSION_LABEL_NORMALIZE = {
-    "cao": "Cao", "ngang": "Ngang", "rộng": "Ngang", "sâu": "Sâu", "dài": "Sâu",
-    "nặng": "Khối lượng", "khối lượng": "Khối lượng",
-}
+# Thuộc tính "ghép" (composite) trên web — vd 1 spec tên "Kích thước" hoặc
+# "Kích thước - Khối lượng" có giá trị dạng "Cao 33.2 - Ngang 18 - Sâu 15
+# (cm)" — thực ra là NHIỀU thuộc tính PIM RIÊNG BIỆT gộp lại (mỗi cái có mã
+# PIM khác nhau trên sheet THUỘC TÍNH CMS/PIM, ví dụ Cao=high_tskt_master,
+# Ngang=horizontal_tskt_master, Sâu=deep_tskt_master, Khối lượng=
+# machine_weight_tskt_master — xem ảnh cấu hình PIM thật category "Máy làm
+# sữa hạt" mã 29404).
+#
+# QUY TẮC TÁCH (rule-based, KHÔNG suy diễn tự do):
+#   1) Tên thuộc tính đã scrape (chuẩn hoá qua _norm_attr) phải khớp ĐÚNG với
+#      1 trong các alias khai báo sẵn ở "keys" bên dưới — thuộc tính KHÔNG có
+#      trong bảng này không bao giờ bị đụng tới, tránh tách nhầm ngoài ý muốn.
+#   2) Nếu khớp, duyệt TUẦN TỰ đúng thứ tự "sub_labels" đã khai báo (vd luôn
+#      Cao -> Ngang -> Sâu -> Khối lượng, không đảo thứ tự), mỗi bước chỉ tìm
+#      trong phần chuỗi CÒN LẠI SAU nhãn trước đó (đảm bảo đúng trình tự xuất
+#      hiện trong text gốc, không nhảy cóc/suy diễn ngược).
+#   3) CHỈ coi là tách thành công khi tìm đủ TOÀN BỘ nhãn con bắt buộc theo
+#      rule; thiếu bất kỳ nhãn nào -> trả về [] và giữ nguyên xử lý an toàn cũ
+#      (1 thuộc tính -> 1 cột, sẽ hiện ở "Thuộc tính chưa map" nếu chưa có mã
+#      PIM), tuyệt đối không đoán mò giá trị thiếu.
+# Muốn thêm loại thuộc tính ghép khác (vd "Kích thước - Trọng lượng đóng
+# gói"), chỉ cần thêm 1 entry mới vào COMPOUND_ATTR_RULES — không cần sửa
+# logic tách bên dưới.
+COMPOUND_ATTR_RULES = [
+    {
+        "keys": {
+            "kích thước", "kích thước sản phẩm", "kích thước - khối lượng",
+            "kích thước và khối lượng", "kích thước - trọng lượng",
+            "kích thước (dài x rộng x cao)", "kích thước, khối lượng",
+        },
+        "sub_labels": ["Cao", "Ngang", "Sâu", "Khối lượng"],
+        "label_aliases": {
+            "Cao": ["cao"],
+            "Ngang": ["ngang", "rộng"],
+            "Sâu": ["sâu", "dài"],
+            "Khối lượng": ["khối lượng", "nặng", "trọng lượng"],
+        },
+    },
+]
+_COMPOUND_RULE_BY_KEY = {k: rule for rule in COMPOUND_ATTR_RULES for k in rule["keys"]}
 
 
-def split_compound_dimension_spec(spec_value: str):
-    """Nếu `spec_value` chứa >=2 nhãn kích thước/khối lượng (Cao/Ngang/Sâu/
-    Nặng...) kèm số, tách thành list [(tên con, giá trị con), ...]; trả về []
-    nếu không phải dạng ghép (giữ nguyên xử lý cũ)."""
-    matches = _DIMENSION_LABEL_PATTERN.findall(spec_value or "")
-    if len(matches) < 2:
+def split_compound_spec_by_rule(spec_name: str, spec_value: str):
+    """Tách 1 thuộc tính "ghép" theo rule tra cứu tường minh (xem giải thích ở
+    COMPOUND_ATTR_RULES). Trả về [] nếu spec_name không nằm trong bảng rule
+    hoặc không tìm đủ tuần tự toàn bộ nhãn con bắt buộc."""
+    rule = _COMPOUND_RULE_BY_KEY.get(_norm_attr(spec_name))
+    if not rule:
         return []
+    text = spec_value or ""
+    pos = 0
     out = []
-    for label, number, unit in matches:
-        norm_label = _DIMENSION_LABEL_NORMALIZE.get(re.sub(r"\s+", " ", label).strip().lower(), label.strip())
-        val = number.strip()
+    for sub_label in rule["sub_labels"]:
+        aliases = rule["label_aliases"].get(sub_label, [sub_label.lower()])
+        alias_pattern = "|".join(re.escape(a) for a in aliases)
+        m = re.search(
+            rf"(?:{alias_pattern})\s*[:\-]?\s*([\d]+(?:[.,]\d+)?)\s*(cm|mm|m|kg|g)?",
+            text[pos:],
+            re.IGNORECASE,
+        )
+        if not m:
+            return []  # thiếu 1 nhãn bắt buộc theo rule -> không tách, an toàn
+        val = m.group(1).strip()
+        unit = m.group(2)
         if unit:
             val = f"{val} {unit}"
-        out.append((norm_label, val))
+        out.append((sub_label, val))
+        pos += m.end()  # bước tiếp theo chỉ tìm trong phần còn lại -> đúng trình tự
     return out
 
 
@@ -953,20 +1010,25 @@ def convert_results_to_pim(ok_results, cat_config, mapping_by_cate, cate_name_to
 
         row_values = defaultdict(list)  # code -> [values...] (handles "gộp" — multiple
         # CMS spec rows mapping to the same PIM code get combined here)
-        for spec_name, spec_value in r["specs"].items():
-            spec_value = (spec_value or "").strip()
+        for spec_name_raw, spec_value_raw in r["specs"].items():
+            # Làm sạch CƠ HỌC (NFC + gộp khoảng trắng + cắt ký tự rác đầu-cuối)
+            # trước khi so khớp — tránh lệch do "sai chính tả"/encoding khác
+            # dạng dấu tiếng Việt giữa dữ liệu web và dữ liệu CMS/PIM đã nạp.
+            spec_name = clean_spec_value(spec_name_raw)
+            spec_value = clean_spec_value(spec_value_raw)
             if not spec_value:
                 continue
 
             # Thuộc tính "ghép" kiểu Kích thước/Khối lượng (vd "Cao 33.2 -
             # Ngang 18 - Sâu 15 (cm)") -> tách thành từng thuộc tính con
-            # (Cao/Ngang/Sâu/Khối lượng), mỗi cái tự map theo đúng mã PIM
-            # riêng của nó thay vì gộp chung vào 1 cột.
-            sub_specs = split_compound_dimension_spec(spec_value)
+            # (Cao/Ngang/Sâu/Khối lượng) theo RULE tường minh ở
+            # COMPOUND_ATTR_RULES (xem giải thích ngay phía trên hàm), mỗi cái
+            # tự map theo đúng mã PIM riêng của nó thay vì gộp chung vào 1 cột.
+            sub_specs = split_compound_spec_by_rule(spec_name, spec_value)
             entries = sub_specs if sub_specs else [(spec_name, spec_value)]
 
             for entry_name, entry_value in entries:
-                entry_value = (entry_value or "").strip()
+                entry_value = clean_spec_value(entry_value)
                 if not entry_value:
                     continue
                 # 1 spec có nhiều giá trị nối bằng dấu phẩy (vd "Tiết kiệm
@@ -1078,6 +1140,62 @@ def build_pim_workbook(sheets, unmatched_category, unmatched_attrs) -> bytes:
 
     buf = io.BytesIO()
     wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def build_pim_category_zip(sheets, unmatched_category, unmatched_attrs) -> bytes:
+    """Xuất file chuẩn IMPORT PIM: MỖI CATEGORY = 1 FILE RIÊNG BIỆT, định dạng
+    TEXT THUẦN (.csv, mọi ô đều là chuỗi — không có ô nào bị phần mềm bảng
+    tính tự suy diễn thành số/ngày tháng/mất số 0 đầu như khi mở .xlsx), đúng
+    yêu cầu "mỗi cate xuất ra là một file riêng biệt và định dạng là text".
+    Dòng đầu tiên = mã cột (đúng chuẩn PIM đọc theo mã, model_code/variant_code
+    luôn ở đầu). Toàn bộ được đóng gói vào 1 file .zip để tải về 1 lần; 2 file
+    báo lỗi (category chưa xác định / thuộc tính chưa map) cũng nằm trong zip
+    dưới dạng .csv để dễ đối chiếu, không lẫn vào dữ liệu import."""
+    ref_cols = ["_product_id", "_product_name", "_product_url"]
+
+    def _write_csv(rows_iterable, header):
+        out = io.StringIO()
+        writer = csv.writer(out, quoting=csv.QUOTE_ALL)
+        writer.writerow(header)
+        for row in rows_iterable:
+            writer.writerow(row)
+        # BOM để Excel/công cụ import mở đúng tiếng Việt có dấu.
+        return "﻿" + out.getvalue()
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        used_names = set()
+        for cate_key, info in sheets.items():
+            extra_columns = [(c, n) for c, n in info["columns"] if c not in IDENTITY_CODES]
+            codes = [c for c, _ in IDENTITY_COLUMNS] + [c for c, _ in extra_columns]
+            header = codes + ref_cols
+
+            base_name = (safe_folder_name(info["label"], cate_key) or cate_key).strip() or cate_key
+            fname = f"{base_name}.csv"
+            n = 1
+            while fname in used_names:
+                n += 1
+                fname = f"{base_name}_{n}.csv"
+            used_names.add(fname)
+
+            rows = ([str(row.get(c, "")) for c in header] for row in info["rows"])
+            zf.writestr(fname, _write_csv(rows, header))
+
+        if unmatched_category:
+            header = ["Mã SP", "Tên sản phẩm", "cate_id (web)", "cate_name (web)", "URL"]
+            rows = (
+                [str(r.get("product_id") or r["input"]), r["name"], r.get("cate_id") or "", r.get("cate_name") or "", r["url"]]
+                for r in unmatched_category
+            )
+            zf.writestr("_chua_xac_dinh_category.csv", _write_csv(rows, header))
+
+        if unmatched_attrs:
+            header = ["Category", "Sản phẩm", "Tên thuộc tính (web)", "Giá trị"]
+            rows = ([e["cate"], e["product"], e["attr"], e["value"]] for e in unmatched_attrs)
+            zf.writestr("_thuoc_tinh_chua_map.csv", _write_csv(rows, header))
+
     buf.seek(0)
     return buf.getvalue()
 
@@ -1225,6 +1343,45 @@ st.markdown(
 """,
     unsafe_allow_html=True,
 )
+
+with st.expander("📖 Hướng dẫn sử dụng & cảnh báo lỗi thường gặp — bấm để xem", expanded=False):
+    st.markdown(
+        """
+**Thứ tự dùng đúng (làm sai thứ tự dễ ra file thiếu/sai dữ liệu):**
+
+1. **Cấu hình dữ liệu trước khi chuyển đổi** — vào tab *"🔄 Chuyển đổi PIM" ▸ "🛠️ Cấu hình dữ liệu"*,
+   nạp/kiểm tra đủ 2 bảng: **CẤU HÌNH CATEGORY** (category nào xuất cột PIM nào) và
+   **THUỘC TÍNH CMS/PIM** (tên thuộc tính trên web map sang mã PIM nào). Thiếu 1 trong 2 bảng này,
+   thuộc tính sẽ rơi vào mục "Thuộc tính chưa map" thay vì ra đúng cột.
+2. **Dán ID/link sản phẩm → bấm tải** ở sidebar bên trái.
+3. **Kiểm tra kết quả tải** ở tab *"🗂️ Theo Category"* / *"📋 Bảng dữ liệu"* — sản phẩm lỗi (❌) sẽ không
+   được đưa vào file chuyển đổi.
+4. **Chuyển đổi PIM** ở tab *"🔄 Chuyển đổi PIM" ▸ "🔄 Chuyển đổi"** — bấm nút chuyển đổi, đọc kỹ 4 chỉ số
+   hiện ra (sản phẩm đã map / category ra file / category chưa xác định / thuộc tính chưa map) và
+   phần **🧵 Đối chiếu đa luồng** — đây là bước tự động dò sai trước khi tải file, đừng bỏ qua cảnh báo.
+5. **Tải file** — luôn tải file **.zip (import)** để nạp vào PIM (mỗi category 1 file .csv, toàn bộ là
+   text nên không sợ Excel tự đổi số/mất số 0 đầu); file **.xlsx (xem nhanh)** chỉ để kiểm tra mắt
+   thường, **không dùng để import**.
+
+**⚠️ Cảnh báo — các lỗi hay gặp:**
+
+- ⚠️ **Bỏ qua cảnh báo "Thuộc tính chưa map" / "Category chưa xác định"** rồi tải file import ngay →
+  cột đó sẽ trống trên file, PIM sẽ thiếu dữ liệu mà không báo lỗi gì thêm. Luôn xử lý hết cảnh báo
+  (hoặc chủ động chấp nhận bỏ qua) trước khi tải file thật để import.
+- ⚠️ **Sửa trực tiếp dữ liệu ở vùng "Cấu hình dữ liệu" trong lúc đang xem kết quả chuyển đổi** → 2 khu
+  vực này đã tách riêng (đúng yêu cầu), sửa xong phải bấm **chuyển đổi lại** thì kết quả mới cập nhật,
+  không tự động.
+- ⚠️ **Xoá nhầm dòng cấu hình rồi không bấm "💾 Lưu lên GitHub"** → thay đổi chỉ nằm tạm trong phiên làm
+  việc, tắt trình duyệt là mất, không lưu vĩnh viễn.
+- ⚠️ **Thuộc tính "ghép"** (vd Kích thước - Khối lượng) chỉ được tự tách khi **tên thuộc tính khớp đúng**
+  với bảng rule đã khai báo trong code (`COMPOUND_ATTR_RULES`) — thuộc tính ghép dạng mới/tên khác sẽ
+  KHÔNG tự tách (an toàn, tránh suy diễn sai) và sẽ hiện nguyên trong "Thuộc tính chưa map" — báo lại để
+  bổ sung rule.
+- ⚠️ File Excel nạp cấu hình phải đúng định dạng mẫu (category-template có dòng đầu là mã cột; file
+  CMS/PIM có các cột MÃ NGÀNH HÀNG CMS / TÊN THUỘC TÍNH TSKT / MÃ MASTER) — sai tên cột tool sẽ không
+  đọc được, không tự đoán bừa cột nào là cột nào.
+        """
+    )
 
 with st.sidebar:
     st.markdown("### ⚙️ Cấu hình")
@@ -1761,9 +1918,12 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                             )
                             if ok:
                                 load_github_json.clear()
+                                st.session_state["cat_last_saved"] = _vn_now_str()
                                 st.success(msg)
                             else:
                                 st.error(msg)
+                        if st.session_state.get("cat_last_saved"):
+                            st.caption(f"🕒 Lần lưu Category gần nhất: {st.session_state['cat_last_saved']}")
 
                     st.markdown(
                         '<div class="dmx-zone-title dmx-zone-map">🏷️ Vùng 2 — Thuộc tính CMS/PIM '
@@ -1818,9 +1978,12 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                             )
                             if ok:
                                 load_github_json.clear()
+                                st.session_state["map_last_saved"] = _vn_now_str()
                                 st.success(msg)
                             else:
                                 st.error(msg)
+                        if st.session_state.get("map_last_saved"):
+                            st.caption(f"🕒 Lần lưu Thuộc tính CMS/PIM gần nhất: {st.session_state['map_last_saved']}")
 
                     st.caption(
                         "ℹ️ 2 kho lưu trên GitHub tách biệt hoàn toàn: `category_overrides.json` và "
@@ -1908,6 +2071,9 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                             st.session_state["pim_workbook"] = build_pim_workbook(
                                 sheets, unmatched_cate, unmatched_attrs
                             )
+                            st.session_state["pim_zip"] = build_pim_category_zip(
+                                sheets, unmatched_cate, unmatched_attrs
+                            )
                             st.session_state["pim_stats"] = {
                                 "matched_products": sum(len(v["rows"]) for v in sheets.values()),
                                 "categories": len(sheets),
@@ -1974,10 +2140,26 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                     else:
                         st.caption("🧵 Đối chiếu đa luồng: không phát hiện bất thường.")
 
-                    st.download_button(
-                        "⬇️ Tải file PIM (xlsx, 1 sheet / category)",
+                    dl1, dl2 = st.columns(2)
+                    dl1.download_button(
+                        "⬇️ Tải file IMPORT (.zip — mỗi category 1 file .csv text)",
+                        data=st.session_state["pim_zip"],
+                        file_name="dienmayxanh_pim_import.zip",
+                        mime="application/zip",
+                        use_container_width=True,
+                        help=(
+                            "Định dạng chuẩn để nạp vào PIM: mỗi category = 1 file .csv riêng "
+                            "biệt, toàn bộ giá trị đều là TEXT thuần (không bị Excel tự suy diễn "
+                            "thành số/ngày tháng khi mở), dòng đầu tiên là mã cột. Trong zip còn "
+                            "có 2 file _chua_xac_dinh_category.csv / _thuoc_tinh_chua_map.csv để "
+                            "đối chiếu lỗi, không lẫn vào dữ liệu import."
+                        ),
+                    )
+                    dl2.download_button(
+                        "🗂️ Tải file xem nhanh (.xlsx — 1 sheet / category)",
                         data=st.session_state["pim_workbook"],
-                        file_name="dienmayxanh_pim_import.xlsx",
+                        file_name="dienmayxanh_pim_import_xemnhanh.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
+                        help="Bản gộp 1 file xlsx nhiều sheet, chỉ để xem/kiểm tra nhanh trên máy — không dùng file này để import.",
                     )
