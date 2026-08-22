@@ -1332,15 +1332,23 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                     else:
                         local_cat_rows = st.session_state.local_cat_data.fillna("").to_dict("records")
                         local_map_rows = st.session_state.local_map_data.fillna("").to_dict("records")
-                        # cate_name auto-inferred from cate_id when left blank: prefer the
-                        # name actually seen on the site while scraping (breadcrumb), fall
-                        # back to whatever THUỘC TÍNH CMS/PIM already knows for that id.
+                        # cate_name auto-inferred from cate_id when left blank. Priority: the
+                        # CMS/PIM category data the user themselves loaded into the "Cấu hình
+                        # bổ sung" table (typed in, or nạp từ file Excel — cate_id + cate_name
+                        # đi cùng nhau) is the authoritative source; the live Google Sheet and
+                        # the name scraped from the site's breadcrumb are only used as a last
+                        # resort when that cate_id hasn't been loaded locally yet.
                         fallback_names = dict(cate_id_to_name)
                         for r in ok_results:
                             cid = str(r.get("cate_id") or "").strip()
                             cname = r.get("cate_name") or ""
                             if cid and cname:
                                 fallback_names[cid] = cname
+                        for row in local_cat_rows:
+                            cid = str(row.get("cate_id") or "").strip()
+                            cname = str(row.get("cate_name") or "").strip()
+                            if cid and cname:
+                                fallback_names[cid] = cname  # user's own loaded data wins
                         cat_config = merge_local_category_config(cat_config, local_cat_rows, fallback_names)
                         mapping_by_cate = merge_local_mapping(mapping_by_cate, local_map_rows)
 
