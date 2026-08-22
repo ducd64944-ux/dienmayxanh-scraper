@@ -884,6 +884,45 @@ def match_category(r, cat_config, cate_name_to_id):
     return None
 
 
+# Thuộc tính "ghép" (composite) trên web — vd 1 spec tên "Kích thước" có giá
+# trị dạng "Cao 33.2 - Ngang 18 - Sâu 15 (cm)" — thực ra là 4 thuộc tính PIM
+# RIÊNG BIỆT gộp lại (Cao/Ngang/Sâu/Khối lượng, mỗi cái có mã PIM khác nhau
+# trên sheet THUỘC TÍNH CMS/PIM, ví dụ high_tskt_master/horizontal_tskt_master/
+# deep_tskt_master/machine_weight_tskt_master). Regex bên dưới bắt các nhãn
+# kích thước/khối lượng thường gặp + số + đơn vị, tách thành từng cặp
+# (tên con, giá trị con) riêng để mỗi cái tự tra cứu mã PIM theo đúng tên của
+# nó — KHÔNG gộp chung vào 1 cột. Đây là bản v1 "best-effort" dựa theo cấu
+# trúc cột đã thấy trên PIM thật (Cao/Ngang/Sâu/Nặng); nếu định dạng chuỗi
+# thật trên web khác đi (ví dụ dùng "x" thay vì "-"), cần điều chỉnh lại regex
+# này theo dữ liệu mẫu thật — bấm vào cảnh báo "Thuộc tính chưa map" sau khi
+# chuyển đổi để xem tên spec gốc chưa tách được.
+_DIMENSION_LABEL_PATTERN = re.compile(
+    r"(Cao|Ngang|Rộng|Sâu|Dài|Nặng|Khối\s*lượng)\s*[:\-]?\s*([\d]+(?:[.,]\d+)?)\s*(cm|mm|m|kg|g)?",
+    re.IGNORECASE,
+)
+_DIMENSION_LABEL_NORMALIZE = {
+    "cao": "Cao", "ngang": "Ngang", "rộng": "Ngang", "sâu": "Sâu", "dài": "Sâu",
+    "nặng": "Khối lượng", "khối lượng": "Khối lượng",
+}
+
+
+def split_compound_dimension_spec(spec_value: str):
+    """Nếu `spec_value` chứa >=2 nhãn kích thước/khối lượng (Cao/Ngang/Sâu/
+    Nặng...) kèm số, tách thành list [(tên con, giá trị con), ...]; trả về []
+    nếu không phải dạng ghép (giữ nguyên xử lý cũ)."""
+    matches = _DIMENSION_LABEL_PATTERN.findall(spec_value or "")
+    if len(matches) < 2:
+        return []
+    out = []
+    for label, number, unit in matches:
+        norm_label = _DIMENSION_LABEL_NORMALIZE.get(re.sub(r"\s+", " ", label).strip().lower(), label.strip())
+        val = number.strip()
+        if unit:
+            val = f"{val} {unit}"
+        out.append((norm_label, val))
+    return out
+
+
 def convert_results_to_pim(ok_results, cat_config, mapping_by_cate, cate_name_to_id, cate_id_to_name):
     """Build PIM text-only conversion. Returns:
        sheets: {cate_key: {"columns": [...], "rows": [dict], "label": str}}
@@ -918,20 +957,41 @@ def convert_results_to_pim(ok_results, cat_config, mapping_by_cate, cate_name_to
             spec_value = (spec_value or "").strip()
             if not spec_value:
                 continue
-            code = attr_map.get(_norm_attr(spec_name))
-            if not code:
-                unmatched_attrs.append(
-                    {
-                        "cate": cfg["name"] or cfg_cate_id,
-                        "cate_id": cfg_cate_id,
-                        "product": r["name"],
-                        "attr": spec_name,
-                        "value": spec_value,
-                    }
-                )
-                continue
-            if spec_value not in row_values[code]:
-                row_values[code].append(spec_value)
+
+            # Thuộc tính "ghép" kiểu Kích thước/Khối lượng (vd "Cao 33.2 -
+            # Ngang 18 - Sâu 15 (cm)") -> tách thành từng thuộc tính con
+            # (Cao/Ngang/Sâu/Khối lượng), mỗi cái tự map theo đúng mã PIM
+            # riêng của nó thay vì gộp chung vào 1 cột.
+            sub_specs = split_compound_dimension_spec(spec_value)
+            entries = sub_specs if sub_specs else [(spec_name, spec_value)]
+
+            for entry_name, entry_value in entries:
+                entry_value = (entry_value or "").strip()
+                if not entry_value:
+                    continue
+                # 1 spec có nhiều giá trị nối bằng dấu phẩy (vd "Tiết kiệm
+                # điện, Tỏa nhiệt ít, Chip LED chất lượng cao, ...") -> tách
+                # theo dấu phẩy rồi nối lại bằng PIM_MULTI_JOIN (|), đúng quy
+                # ước phân tách nhiều giá trị của toàn bộ tool.
+                if "," in entry_value:
+                    comma_parts = [p.strip() for p in entry_value.split(",") if p.strip()]
+                    if len(comma_parts) >= 2:
+                        entry_value = PIM_MULTI_JOIN.join(dict.fromkeys(comma_parts))
+
+                code = attr_map.get(_norm_attr(entry_name))
+                if not code:
+                    unmatched_attrs.append(
+                        {
+                            "cate": cfg["name"] or cfg_cate_id,
+                            "cate_id": cfg_cate_id,
+                            "product": r["name"],
+                            "attr": entry_name,
+                            "value": entry_value,
+                        }
+                    )
+                    continue
+                if entry_value not in row_values[code]:
+                    row_values[code].append(entry_value)
 
         out_row = {}
         out_row["_product_name"] = r["name"]
