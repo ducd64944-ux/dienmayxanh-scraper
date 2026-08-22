@@ -521,7 +521,7 @@ def convert_results_to_pim(ok_results, cat_config, mapping_by_cate, cate_name_to
             if spec_value not in row_values[code]:
                 row_values[code].append(spec_value)
 
-        out_row = {"model_code": "", "sku": "", "category_code": "", "variant_code": ""}
+        out_row = {}
         out_row["_product_name"] = r["name"]
         out_row["_product_url"] = r["url"]
         out_row["_product_id"] = r.get("product_id") or r["input"]
@@ -537,11 +537,25 @@ def convert_results_to_pim(ok_results, cat_config, mapping_by_cate, cate_name_to
 
 
 def build_pim_workbook(sheets, unmatched_category, unmatched_attrs) -> bytes:
+    """Build the IMPORT-format workbook, 1 sheet per category. Column layout is
+    driven entirely by CẤU HÌNH CATEGORY (+ local override table) — whatever
+    columns are configured there for a category (model_code, sku, variant_code,
+    or any attribute code) become the sheet's columns, in that exact order, so
+    the output matches the real PIM import template 1:1 (verified against the
+    "Importdaydongho.xlsx" reference: header row = machine codes, row 2 =
+    Vietnamese names, no extra identity columns beyond what's configured).
+    Columns not covered by a CMS spec mapping (e.g. model_code) are simply left
+    blank, same as the reference file expects the user to fill in afterwards.
+    3 reference-only columns are appended at the end (_product_id/_name/_url)
+    so a row can still be traced back to its source product while identity
+    columns like model_code stay blank — these are NOT part of the import
+    format itself, just a lookup aid for the person filling them in.
+    """
     wb = Workbook()
     wb.remove(wb.active)
 
-    id_cols = ["model_code", "sku", "category_code", "variant_code"]
     ref_cols = ["_product_id", "_product_name", "_product_url"]
+    ref_names = ["Mã SP (tham chiếu)", "Tên sản phẩm (tham chiếu)", "URL (tham chiếu)"]
 
     for cate_key, info in sheets.items():
         title = safe_folder_name(info["label"], cate_key)[:31] or cate_key
@@ -555,12 +569,8 @@ def build_pim_workbook(sheets, unmatched_category, unmatched_attrs) -> bytes:
 
         codes = [c for c, _ in info["columns"]]
         names = [n for _, n in info["columns"]]
-        header1 = id_cols + codes + ref_cols
-        header2 = (
-            ["Mã model", "Mã sản phẩm ERP", "Mã danh mục PIM", "Mã biến thể"]
-            + names
-            + ["Mã SP (tham chiếu)", "Tên sản phẩm (tham chiếu)", "URL (tham chiếu)"]
-        )
+        header1 = codes + ref_cols
+        header2 = names + ref_names
         ws.append(header1)
         ws.append(header2)
         for r in (1, 2):
@@ -574,9 +584,7 @@ def build_pim_workbook(sheets, unmatched_category, unmatched_attrs) -> bytes:
             ws.append([row.get(c, "") for c in header1])
 
         for i, c in enumerate(header1, 1):
-            ws.column_dimensions[get_column_letter(i)].width = (
-                12 if c in id_cols else (40 if c in ref_cols else 26)
-            )
+            ws.column_dimensions[get_column_letter(i)].width = 40 if c in ref_cols else 26
         ws.freeze_panes = "A3"
 
     if unmatched_category:
@@ -1074,7 +1082,10 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                 "(live) từ Google Sheet — bạn cập nhật bên đó là tool dùng ngay bản mới nhất, "
                 "không cần upload lại gì cả. Giá trị xuất ra là **text thô** (không mã hoá số), "
                 "nhiều dòng CMS map cùng 1 cột PIM sẽ được gộp và nối bằng dấu `|`. "
-                "`model_code / sku / category_code / variant_code` để trống — bạn tự nhập sau."
+                "Các cột trong file xuất ra **đúng theo cấu hình của từng category** trên sheet "
+                "CẤU HÌNH CATEGORY (kể cả `model_code` nếu bạn thêm nó vào danh sách cột — cột nào "
+                "không map được từ web như `model_code` sẽ để trống, bạn tự điền sau). Có thêm 3 cột "
+                "tham chiếu (Mã SP / Tên / URL) ở cuối mỗi sheet để dễ đối chiếu ngược lại sản phẩm."
             )
 
             # -- Local override area: add/edit Category config + CMS/PIM mapping right
