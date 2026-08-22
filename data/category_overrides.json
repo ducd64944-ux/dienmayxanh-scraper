@@ -1,1 +1,7 @@
-[]
+[
+  {
+    "cate_id": "7358",
+    "cate_name": "Bóng đèn led",
+    "columns_text": "brand_of_tskt_master:Thương hiệu của; color_rendering_index_tskt_master:Chỉ số hoàn màu; deep_tskt_master:Sâu; high_tskt_master:Cao; horizontal_tskt_master:Ngang; lamp_lifespan_tskt_master:Tuổi thọ đèn; lamp_size_tskt_master:Kích thước đèn; light_color_tskt_master:Màu sắc ánh sáng; luminous_efficacy_tskt_master:Hiệu suất sáng; luminous_flux_tskt_master:Quang thông; made_in_tskt_master:Sản xuất tại; operating_frequency_tskt_master:Tần số hoạt động; power_tskt_master:Công suất; product_type_tskt_master:Loại sản phẩm; utilities_tskt_master:Tiện ích; voltage_tskt_master:Điện áp"
+  }
+]
