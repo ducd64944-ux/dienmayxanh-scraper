@@ -1149,16 +1149,26 @@ def build_pim_category_zip(sheets, unmatched_category, unmatched_attrs) -> bytes
     TEXT THUẦN (.csv, mọi ô đều là chuỗi — không có ô nào bị phần mềm bảng
     tính tự suy diễn thành số/ngày tháng/mất số 0 đầu như khi mở .xlsx), đúng
     yêu cầu "mỗi cate xuất ra là một file riêng biệt và định dạng là text".
-    Dòng đầu tiên = mã cột (đúng chuẩn PIM đọc theo mã, model_code/variant_code
-    luôn ở đầu). Toàn bộ được đóng gói vào 1 file .zip để tải về 1 lần; 2 file
-    báo lỗi (category chưa xác định / thuộc tính chưa map) cũng nằm trong zip
-    dưới dạng .csv để dễ đối chiếu, không lẫn vào dữ liệu import."""
+    MỖI FILE CÓ 2 DÒNG HEADER (giống hệt sheet xlsx trước đây, không bị mất
+    thông tin khi chuyển sang .csv):
+      - Dòng 1 = MÃ CỘT PIM (model_code/variant_code luôn ở đầu) — dòng này
+        PIM đọc để import đúng cột.
+      - Dòng 2 = TÊN TIẾNG VIỆT tương ứng của từng mã — lấy đúng từ tên hiển
+        thị đã cấu hình ở CẤU HÌNH CATEGORY (bảng này vốn đã được đối chiếu
+        từ TSKT + THUỘC TÍNH CMS/PIM khi cấu hình category, không phải tự bịa
+        thêm ở bước xuất file) — để người xem file biết mã đó là thuộc tính gì
+        mà không cần tra ngược sang bảng khác.
+    Toàn bộ được đóng gói vào 1 file .zip để tải về 1 lần; 2 file báo lỗi
+    (category chưa xác định / thuộc tính chưa map) cũng nằm trong zip dưới
+    dạng .csv để dễ đối chiếu, không lẫn vào dữ liệu import."""
     ref_cols = ["_product_id", "_product_name", "_product_url"]
+    ref_names = ["Mã SP (tham chiếu)", "Tên sản phẩm (tham chiếu)", "URL (tham chiếu)"]
 
-    def _write_csv(rows_iterable, header):
+    def _write_csv(rows_iterable, header_rows):
         out = io.StringIO()
         writer = csv.writer(out, quoting=csv.QUOTE_ALL)
-        writer.writerow(header)
+        for h in header_rows:
+            writer.writerow(h)
         for row in rows_iterable:
             writer.writerow(row)
         # BOM để Excel/công cụ import mở đúng tiếng Việt có dấu.
@@ -1170,7 +1180,9 @@ def build_pim_category_zip(sheets, unmatched_category, unmatched_attrs) -> bytes
         for cate_key, info in sheets.items():
             extra_columns = [(c, n) for c, n in info["columns"] if c not in IDENTITY_CODES]
             codes = [c for c, _ in IDENTITY_COLUMNS] + [c for c, _ in extra_columns]
-            header = codes + ref_cols
+            names = [n for _, n in IDENTITY_COLUMNS] + [n for _, n in extra_columns]
+            header1 = codes + ref_cols
+            header2 = names + ref_names
 
             base_name = (safe_folder_name(info["label"], cate_key) or cate_key).strip() or cate_key
             fname = f"{base_name}.csv"
@@ -1180,8 +1192,8 @@ def build_pim_category_zip(sheets, unmatched_category, unmatched_attrs) -> bytes
                 fname = f"{base_name}_{n}.csv"
             used_names.add(fname)
 
-            rows = ([str(row.get(c, "")) for c in header] for row in info["rows"])
-            zf.writestr(fname, _write_csv(rows, header))
+            rows = ([str(row.get(c, "")) for c in header1] for row in info["rows"])
+            zf.writestr(fname, _write_csv(rows, [header1, header2]))
 
         if unmatched_category:
             header = ["Mã SP", "Tên sản phẩm", "cate_id (web)", "cate_name (web)", "URL"]
@@ -1189,12 +1201,12 @@ def build_pim_category_zip(sheets, unmatched_category, unmatched_attrs) -> bytes
                 [str(r.get("product_id") or r["input"]), r["name"], r.get("cate_id") or "", r.get("cate_name") or "", r["url"]]
                 for r in unmatched_category
             )
-            zf.writestr("_chua_xac_dinh_category.csv", _write_csv(rows, header))
+            zf.writestr("_chua_xac_dinh_category.csv", _write_csv(rows, [header]))
 
         if unmatched_attrs:
             header = ["Category", "Sản phẩm", "Tên thuộc tính (web)", "Giá trị"]
             rows = ([e["cate"], e["product"], e["attr"], e["value"]] for e in unmatched_attrs)
-            zf.writestr("_thuoc_tinh_chua_map.csv", _write_csv(rows, header))
+            zf.writestr("_thuoc_tinh_chua_map.csv", _write_csv(rows, [header]))
 
     buf.seek(0)
     return buf.getvalue()
