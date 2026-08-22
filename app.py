@@ -922,13 +922,16 @@ def match_category(r, cat_config, cate_name_to_id):
 #      1 trong các alias khai báo sẵn ở "keys" bên dưới — thuộc tính KHÔNG có
 #      trong bảng này không bao giờ bị đụng tới, tránh tách nhầm ngoài ý muốn.
 #   2) Nếu khớp, duyệt TUẦN TỰ đúng thứ tự "sub_labels" đã khai báo (vd luôn
-#      Cao -> Ngang -> Sâu -> Khối lượng, không đảo thứ tự), mỗi bước chỉ tìm
-#      trong phần chuỗi CÒN LẠI SAU nhãn trước đó (đảm bảo đúng trình tự xuất
-#      hiện trong text gốc, không nhảy cóc/suy diễn ngược).
-#   3) CHỈ coi là tách thành công khi tìm đủ TOÀN BỘ nhãn con bắt buộc theo
-#      rule; thiếu bất kỳ nhãn nào -> trả về [] và giữ nguyên xử lý an toàn cũ
-#      (1 thuộc tính -> 1 cột, sẽ hiện ở "Thuộc tính chưa map" nếu chưa có mã
-#      PIM), tuyệt đối không đoán mò giá trị thiếu.
+#      thử Cao -> Ngang -> Sâu -> Khối lượng theo đúng thứ tự này, không đảo
+#      thứ tự) — mỗi nhãn TÌM ĐƯỢC thì mới xén phần chuỗi đã dùng, nhãn KHÔNG
+#      tìm thấy thì bỏ qua (không có nghĩa là suy diễn/bịa số cho nó) và thử
+#      nhãn tiếp theo trên phần chuỗi hiện tại — vì trên thực tế không phải
+#      category nào cũng liệt kê đủ cả 4 (vd bóng đèn thường chỉ có Cao/Ngang/
+#      Sâu, không có Khối lượng).
+#   3) CHỈ coi là tách "ghép" thành công khi tìm được ÍT NHẤT 2 NHÃN trong bộ
+#      nhãn con đã khai báo (đúng nghĩa "ghép" = gộp từ ≥2 thuộc tính); tìm
+#      được 0-1 nhãn -> trả về [] và giữ nguyên xử lý an toàn cũ (1 thuộc tính
+#      -> 1 cột, sẽ hiện ở "Thuộc tính chưa map" nếu chưa có mã PIM khớp).
 # Muốn thêm loại thuộc tính ghép khác (vd "Kích thước - Trọng lượng đóng
 # gói"), chỉ cần thêm 1 entry mới vào COMPOUND_ATTR_RULES — không cần sửa
 # logic tách bên dưới.
@@ -954,7 +957,8 @@ _COMPOUND_RULE_BY_KEY = {k: rule for rule in COMPOUND_ATTR_RULES for k in rule["
 def split_compound_spec_by_rule(spec_name: str, spec_value: str):
     """Tách 1 thuộc tính "ghép" theo rule tra cứu tường minh (xem giải thích ở
     COMPOUND_ATTR_RULES). Trả về [] nếu spec_name không nằm trong bảng rule
-    hoặc không tìm đủ tuần tự toàn bộ nhãn con bắt buộc."""
+    hoặc tìm được ít hơn 2 nhãn con trong bộ nhãn đã khai báo (không đủ để
+    coi là "ghép")."""
     rule = _COMPOUND_RULE_BY_KEY.get(_norm_attr(spec_name))
     if not rule:
         return []
@@ -970,14 +974,14 @@ def split_compound_spec_by_rule(spec_name: str, spec_value: str):
             re.IGNORECASE,
         )
         if not m:
-            return []  # thiếu 1 nhãn bắt buộc theo rule -> không tách, an toàn
+            continue  # nhãn này không có trong spec -> bỏ qua, thử nhãn tiếp theo
         val = m.group(1).strip()
         unit = m.group(2)
         if unit:
             val = f"{val} {unit}"
         out.append((sub_label, val))
-        pos += m.end()  # bước tiếp theo chỉ tìm trong phần còn lại -> đúng trình tự
-    return out
+        pos += m.end()  # nhãn tìm được rồi mới xén chuỗi -> vẫn đúng trình tự khai báo
+    return out if len(out) >= 2 else []
 
 
 def convert_results_to_pim(ok_results, cat_config, mapping_by_cate, cate_name_to_id, cate_id_to_name):
