@@ -163,6 +163,22 @@ button[kind="primary"] { border-radius: 10px !important; font-weight: 700 !impor
 .dmx-tabbar div[role="radiogroup"] label:has(input:checked) p { color: #fff !important; font-weight: 700 !important; }
 .dmx-tabbar div[role="radiogroup"] label > div:first-child { display: none; }
 
+/* ---- Thanh sub-tab bên trong tab PIM (Chuyển đổi / Cấu hình dữ liệu) — nhỏ
+   hơn thanh tab chính, màu trung tính, để phân cấp rõ: đây là điều hướng cấp
+   2, không lẫn với 4 tab chính ---- */
+.dmx-subtabbar div[role="radiogroup"] {
+    background: rgba(127,127,127,0.05);
+    border: 1px dashed rgba(127,127,127,0.25);
+}
+.dmx-subtabbar div[role="radiogroup"] label {
+    font-size: 13px !important;
+    padding: 7px 14px !important;
+}
+.dmx-subtabbar div[role="radiogroup"] label:has(input:checked) {
+    background: #2b3a55 !important;
+    box-shadow: none;
+}
+
 /* ---- 2 khu vực Category / CMS-PIM trong tab Chuyển đổi PIM: tách biệt rõ
    ràng bằng tiêu đề màu riêng, dễ phân biệt vùng nào nối-thêm vùng nào đè ---- */
 .dmx-zone-title {
@@ -472,6 +488,10 @@ def cross_check_conversion(cat_config, mapping_by_cate, sheets, max_workers=8):
       (2) một ô bị gộp từ nhiều giá trị khác nhau bất thường (>=3 giá trị khác
           nhau trong 1 ô) — thường là dấu hiệu nhiều thuộc tính CMS khác nhau
           vô tình map chung vào 1 mã PIM.
+      (3) category có sản phẩm nhưng TOÀN BỘ cột TSKT đều trống ở mọi dòng —
+          khả năng cao mapping CMS/PIM của cả category đó bị sai/thiếu hoàn
+          toàn (vd cate_id giữa 2 sheet không khớp), cần kiểm tra ngay thay vì
+          chỉ thấy rải rác từng thuộc tính chưa map.
     Trả về list cảnh báo [{"loai": str, "chi_tiet": str}], rỗng nếu sạch."""
     if not sheets:
         return []
@@ -506,6 +526,21 @@ def cross_check_conversion(cat_config, mapping_by_cate, sheets, max_workers=8):
                                 f"cột '{code}': {len(set(parts))} giá trị khác nhau — {val[:150]}"
                             ),
                         })
+
+        if info["rows"] and info["columns"]:
+            all_blank = all(
+                not any(str(row.get(code, "")).strip() for code, _ in info["columns"])
+                for row in info["rows"]
+            )
+            if all_blank:
+                found.append({
+                    "loai": "Category có sản phẩm nhưng KHÔNG map được thuộc tính nào",
+                    "chi_tiet": (
+                        f"[{info['label']}] {len(info['rows'])} sản phẩm nhưng toàn bộ cột TSKT đều "
+                        f"trống — khả năng cao mapping CMS/PIM của category id {cate_key} bị sai/"
+                        f"thiếu hoàn toàn, kiểm tra lại sheet THUỘC TÍNH CMS/PIM cho category này."
+                    ),
+                })
         return found
 
     warnings = []
@@ -709,38 +744,129 @@ def read_override_excel(file, expected_cols):
     return df
 
 
+def _clean_id_str(v) -> str:
+    """Chuẩn hoá 1 giá trị id đọc từ Excel về text sạch — pandas hay đọc cột
+    id toàn số thành float khi cột có ô trống xen kẽ (vd 7358 -> 7358.0), nên
+    phải cắt đuôi '.0' nếu có, ngoài ra strip khoảng trắng thường."""
+    if v is None:
+        return ""
+    try:
+        if pd.isna(v):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    s = str(v).strip()
+    if s.endswith(".0") and s[:-2].lstrip("-").isdigit():
+        s = s[:-2]
+    return s
+
+
 def read_category_columns_excel(file):
-    """Read a category-config xlsx laid out the same way the user already
-    maintains it: col A = CATEGORY ID, col B = CATEGORY NAME, then col C
-    onwards = "danh sách TSKT (ngang, mỗi ô 1 mã)" — 2 rows per category (a
-    codes row, immediately followed by a Vietnamese-names row with cate_id/
-    cate_name left blank), exactly like the CẤU HÌNH CATEGORY tab on Google
-    Sheet. Returns a DataFrame in local_cat_data's shape (1 row per category,
-    columns_text = "code1:Tên 1;code2:Tên 2;..."), ready to merge straight
-    into the local override table."""
-    raw = pd.read_excel(file, header=None).fillna("").astype(str)
-    rows = raw.values.tolist()
-    if rows and "category id" in rows[0][0].strip().lower():
-        rows = rows[1:]
+    """Đọc file Excel category-template ĐÚNG định dạng thật (kiểu 'Export
+    Product Template' — vd bong_den_led_tskt.xlsx / may_lam_sua_hat_tskt.xlsx):
+    DÒNG 1 là header — cột A = CATEGORY ID, cột B = CATEGORY NAME, từ cột C
+    trở đi CHÍNH LÀ CÁC MÃ TSKT làm luôn tên cột (vd `brand_of_tskt_master`).
+    MỖI DÒNG DỮ LIỆU phía dưới = 1 CATEGORY: ô nào ở cột mã TSKT có giá trị
+    (tên hiển thị tiếng Việt, vd "Thương hiệu của") thì category đó dùng mã
+    cột tương ứng; ô trống = category đó không dùng mã đó. 1 file có thể có
+    nhiều category = nhiều dòng dữ liệu, dùng chung 1 hàng header mã cột.
+    Trả về DataFrame đúng shape local_cat_data (1 dòng / category,
+    columns_text = "code1:Tên 1;code2:Tên 2;...")."""
+    df = pd.read_excel(file, header=0)
+    df.columns = [str(c).strip() for c in df.columns]
+    if len(df.columns) < 3:
+        return pd.DataFrame(columns=["cate_id", "cate_name", "columns_text"])
+    id_col, name_col = df.columns[0], df.columns[1]
+    code_cols = list(df.columns[2:])
     out = []
-    i = 0
-    while i + 1 < len(rows):
-        code_row, name_row = rows[i], rows[i + 1]
-        cate_id = code_row[0].strip() if len(code_row) > 0 else ""
-        cate_name = code_row[1].strip() if len(code_row) > 1 else ""
+    for _, row in df.iterrows():
+        cate_id = _clean_id_str(row[id_col])
         if not cate_id:
-            i += 1
             continue
-        cols = []
-        for c_idx in range(2, max(len(code_row), len(name_row))):
-            code = code_row[c_idx].strip() if c_idx < len(code_row) else ""
-            vname = name_row[c_idx].strip() if c_idx < len(name_row) else ""
-            if not code:
-                break
-            cols.append(f"{code}:{vname or code}")
-        out.append({"cate_id": cate_id, "cate_name": cate_name, "columns_text": ";".join(cols)})
-        i += 2
+        cate_name = str(row[name_col]).strip() if pd.notna(row[name_col]) else ""
+        parts = []
+        for code in code_cols:
+            val = row[code]
+            if pd.isna(val):
+                continue
+            vname = str(val).strip()
+            if not vname:
+                continue
+            parts.append(f"{code}:{vname}")
+        out.append({"cate_id": cate_id, "cate_name": cate_name, "columns_text": "; ".join(parts)})
     return pd.DataFrame(out, columns=["cate_id", "cate_name", "columns_text"])
+
+
+# Các biến thể tên cột đã gặp trong thực tế cho file Excel THUỘC TÍNH CMS/PIM
+# (file tổng hợp đối chiếu CMS-PIM thật của người dùng dùng cả 2 kiểu tên cột
+# này tuỳ sheet: sheet tổng hợp dùng kiểu viết hoa toàn bộ, sheet theo từng
+# category dùng kiểu Title Case khác chút).
+CMSPIM_MAPPING_HEADER_ALIASES = {
+    "cate_id": ["MÃ NGÀNH HÀNG CMS", "Mã ngành hàng CMS", "MÃ NGÀNH HÀNG", "cate_id"],
+    "attr_name": ["TÊN THUỘC TÍNH TSKT", "Tên thuộc tính TSKT", "cms_attr_name"],
+    "code": ["MÃ MASTER", "Mã TSKT (MASTER)", "MÃ THUỘC TÍNH PIM", "pim_code"],
+}
+
+
+def _find_col_ci(columns, *names):
+    lower_map = {str(c).strip().lower(): c for c in columns}
+    for name in names:
+        if name in columns:
+            return name
+        key = name.strip().lower()
+        if key in lower_map:
+            return lower_map[key]
+    return None
+
+
+def read_cmspim_mapping_excel(file):
+    """Đọc file Excel thuộc tính CMS/PIM thật (vd file tổng hợp đối chiếu
+    CMS-PIM) — quét TẤT CẢ sheet trong file (không chỉ sheet đầu tiên, vì file
+    thật thường có nhiều sheet: 1 sheet tổng hợp + nhiều sheet theo từng
+    category), nhận diện đúng theo TÊN CỘT với các biến thể đã gặp trong thực
+    tế (xem CMSPIM_MAPPING_HEADER_ALIASES) — không đọc theo vị trí cột nên
+    không bị lấy nhầm cột như trước (đây chính là lý do tool từng chỉ đọc
+    được rất ít dòng: file 6 cột không khớp tên cột generic nên bị fallback
+    đọc nhầm 3 cột đầu theo vị trí). Sheet nào không đủ 3 cột cần thiết theo
+    tên bị bỏ qua; dữ liệu hợp lệ từ mọi sheet khớp được sẽ được GỘP lại (dedup
+    theo cate_id + tên thuộc tính, dòng sau đè dòng trước). Bỏ qua dòng
+    "▶ NHÓM: ..." và dòng chưa có mã MASTER / chưa có tên thuộc tính."""
+    try:
+        xls = pd.ExcelFile(file)
+    except Exception:  # noqa: BLE001
+        return read_override_excel(file, ["cate_id", "cms_attr_name", "pim_code"])
+
+    all_rows = []
+    for sheet_name in xls.sheet_names:
+        try:
+            df = xls.parse(sheet_name, header=0)
+        except Exception:  # noqa: BLE001
+            continue
+        df.columns = [str(c).strip() for c in df.columns]
+        col_cate = _find_col_ci(df.columns, *CMSPIM_MAPPING_HEADER_ALIASES["cate_id"])
+        col_attr = _find_col_ci(df.columns, *CMSPIM_MAPPING_HEADER_ALIASES["attr_name"])
+        col_code = _find_col_ci(df.columns, *CMSPIM_MAPPING_HEADER_ALIASES["code"])
+        if not (col_cate and col_attr and col_code):
+            continue
+        sub = df[[col_cate, col_attr, col_code]].copy()
+        sub.columns = ["cate_id", "cms_attr_name", "pim_code"]
+        sub["cate_id"] = sub["cate_id"].apply(_clean_id_str)
+        sub["cms_attr_name"] = sub["cms_attr_name"].apply(lambda v: "" if pd.isna(v) else str(v).strip())
+        sub["pim_code"] = sub["pim_code"].apply(lambda v: "" if pd.isna(v) else str(v).strip())
+        sub = sub[~sub["cms_attr_name"].str.startswith("▶")]
+        sub = sub[~sub["cms_attr_name"].str.upper().str.contains("NHÓM")]
+        sub = sub[(sub["cate_id"] != "") & (sub["cms_attr_name"] != "") & (sub["pim_code"] != "")]
+        if not sub.empty:
+            all_rows.append(sub)
+
+    if not all_rows:
+        # Không sheet nào khớp tên cột chuẩn -> fallback về cách cũ (vị trí 3
+        # cột đầu) để vẫn dùng được với file tự soạn không đúng tên cột chuẩn.
+        return read_override_excel(file, ["cate_id", "cms_attr_name", "pim_code"])
+
+    out = pd.concat(all_rows, ignore_index=True)
+    out = out.drop_duplicates(subset=["cate_id", "cms_attr_name"], keep="last").reset_index(drop=True)
+    return out
 
 
 def match_category(r, cat_config, cate_name_to_id):
@@ -1411,365 +1537,387 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                     else pd.DataFrame(columns=["cate_id", "cms_attr_name", "pim_code"])
                 )
 
-            # -- Vùng hiển thị ALL: tổng quan toàn bộ category đang có cấu hình
-            # (Google Sheet + cấu hình bổ sung đã lưu/đang sửa), để biết đã
-            # "import"/cấu hình được bao nhiêu category rồi, không phải bấm
-            # Chuyển đổi mới xem được.
-            try:
-                overview_cat_config = load_category_config()
-            except Exception:  # noqa: BLE001
-                overview_cat_config = {}
-            try:
-                overview_mapping_by_cate, _ov_n2i, _ov_i2n = load_cmspim_mapping()
-            except Exception:  # noqa: BLE001
-                overview_mapping_by_cate = {}
-            overview_cat_config = merge_local_category_config(
-                overview_cat_config, st.session_state.local_cat_data.fillna("").to_dict("records")
+            PIM_SUBTABS = ["🔄 Chuyển đổi", "🛠️ Cấu hình dữ liệu (Category & CMS/PIM)"]
+            st.markdown('<div class="dmx-tabbar dmx-subtabbar">', unsafe_allow_html=True)
+            pim_subtab = st.radio(
+                "Khu vực trong PIM",
+                PIM_SUBTABS,
+                key="dmx_pim_subtab",
+                horizontal=True,
+                label_visibility="collapsed",
             )
-            overview_mapping_by_cate = merge_local_mapping(
-                overview_mapping_by_cate, st.session_state.local_map_data.fillna("").to_dict("records")
+            st.markdown("</div>", unsafe_allow_html=True)
+            st.caption(
+                "🛠️ Cấu hình dữ liệu (Category, thuộc tính CMS/PIM, lưu GitHub) tách RIÊNG khỏi "
+                "bước Chuyển đổi — sang bên đó chỉ để CẬP NHẬT cấu hình, không đụng vào dữ liệu "
+                "sản phẩm vừa lấy; bấm Chuyển đổi ở tab này mới thực sự chạy convert."
             )
-            overview_rows = [
-                {
-                    "cate_id": cid,
-                    "Tên category": cfg["name"] or "(chưa đặt tên)",
-                    "Số cột PIM đã cấu hình": len(cfg["columns"]),
-                    "Số thuộc tính CMS đã map": len(overview_mapping_by_cate.get(cid, {})),
-                }
-                for cid, cfg in overview_cat_config.items()
-            ]
-            overview_rows.sort(key=lambda r: r["Tên category"])
-            oc1, oc2, oc3 = st.columns(3)
-            oc1.metric("🗂️ Tổng số category đã cấu hình", len(overview_rows))
-            oc2.metric(
-                "📐 Category có cột PIM",
-                sum(1 for r in overview_rows if r["Số cột PIM đã cấu hình"] > 0),
-            )
-            oc3.metric(
-                "🏷️ Category có thuộc tính đã map",
-                sum(1 for r in overview_rows if r["Số thuộc tính CMS đã map"] > 0),
-            )
-            with st.expander(f"🌐 Xem ALL — toàn bộ {len(overview_rows)} category đã cấu hình", expanded=False):
-                if overview_rows:
-                    st.dataframe(pd.DataFrame(overview_rows), use_container_width=True, hide_index=True)
-                else:
-                    st.caption("Chưa có category nào được cấu hình (cả trên Google Sheet lẫn cấu hình bổ sung).")
 
-            has_unmatched = bool(
-                st.session_state.get("pim_unmatched_category_list")
-                or st.session_state.get("pim_unmatched_attrs_list")
-            )
-            with st.expander(
-                "🛠️ Cấu hình bổ sung: thêm/sửa Category & thuộc tính CMS/PIM ngay trong tool",
-                expanded=has_unmatched,
-            ):
-                st.caption(
-                    "Dùng khi category hoặc thuộc tính chưa có (hoặc chưa đúng) trên Google Sheet — "
-                    "nhập tạm ở đây để chuyển đổi ngay, không cần chờ cập nhật sheet. Cấu hình bổ "
-                    "sung sẽ được **gộp thêm vào** dữ liệu Google Sheet lúc bấm Chuyển đổi (không xoá "
-                    "gì trên sheet). Khi rảnh, bạn có thể copy các dòng này lên Google Sheet để dùng "
-                    "chung về sau."
-                )
-
-                seed_col1, seed_col2 = st.columns(2)
-                if seed_col1.button(
-                    "➕ Nạp category chưa xác định (lần chuyển đổi gần nhất)",
-                    use_container_width=True,
-                    disabled=not st.session_state.get("pim_unmatched_category_list"),
-                ):
-                    seed_rows = [
-                        {"cate_id": cid, "cate_name": cname, "columns_text": ""}
-                        for cid, cname in st.session_state.get("pim_unmatched_category_list", [])
-                    ]
-                    existing = st.session_state.local_cat_data
-                    st.session_state.local_cat_data = (
-                        pd.concat([existing, pd.DataFrame(seed_rows)], ignore_index=True)
-                        .drop_duplicates(subset=["cate_id"], keep="first")
-                    )
-                    st.rerun()
-                if seed_col2.button(
-                    "➕ Nạp thuộc tính chưa map (lần chuyển đổi gần nhất)",
-                    use_container_width=True,
-                    disabled=not st.session_state.get("pim_unmatched_attrs_list"),
-                ):
-                    seed_rows = [
-                        {"cate_id": cid, "cms_attr_name": attr, "pim_code": ""}
-                        for cid, attr in st.session_state.get("pim_unmatched_attrs_list", [])
-                    ]
-                    existing = st.session_state.local_map_data
-                    st.session_state.local_map_data = (
-                        pd.concat([existing, pd.DataFrame(seed_rows)], ignore_index=True)
-                        .drop_duplicates(subset=["cate_id", "cms_attr_name"], keep="first")
-                    )
-                    st.rerun()
-
-                st.markdown(
-                    '<div class="dmx-zone-title dmx-zone-cat">📁 Vùng 1 — Category '
-                    '<span class="dmx-zone-tag">sửa/xoá gì trong bảng, Lưu là áp dụng đúng vậy trên GitHub</span></div>',
-                    unsafe_allow_html=True,
-                )
-                with st.container(border=True):
-                    st.caption("Mỗi dòng 1 category; cột PIM nhập dạng `mã:Tên hiển thị` cách nhau bởi `;`")
-                    st.session_state.local_cat_data = st.data_editor(
-                        st.session_state.local_cat_data,
-                        num_rows="dynamic",
-                        use_container_width=True,
-                        key="local_cat_editor",
-                        column_config={
-                            "cate_id": st.column_config.TextColumn("cate_id (web hoặc CMS)", width="small"),
-                            "cate_name": st.column_config.TextColumn(
-                                "Tên category (để trống cũng được, tool tự suy ra từ cate_id)"
-                            ),
-                            "columns_text": st.column_config.TextColumn(
-                                "Cột PIM (mã:Tên; mã:Tên; ...)", width="large"
-                            ),
-                        },
-                    )
-                    cat_xlsx = st.file_uploader(
-                        "📂 Hoặc nạp nhanh từ file Excel — đúng định dạng bạn đang dùng: cột A = "
-                        "CATEGORY ID, cột B = CATEGORY NAME, từ cột C là danh sách mã TSKT (ngang, mỗi "
-                        "ô 1 mã) — cứ 2 dòng cho 1 category (dòng mã, rồi dòng tên tương ứng bên dưới, "
-                        "giống hệt sheet CẤU HÌNH CATEGORY của bạn)",
-                        type=["xlsx", "xls"],
-                        key="local_cat_xlsx_uploader",
-                    )
-                    if cat_xlsx is not None:
-                        try:
-                            new_rows = read_category_columns_excel(cat_xlsx)
-                            st.session_state.local_cat_data = (
-                                pd.concat([st.session_state.local_cat_data, new_rows], ignore_index=True)
-                                .drop_duplicates(subset=["cate_id"], keep="last")
-                            )
-                            st.caption(f"✅ Đã nạp {len(new_rows)} category từ file Excel vào bảng trên.")
-                        except Exception as e:  # noqa: BLE001
-                            st.error(f"Không đọc được file Excel: {e}")
-
-                    if st.button(
-                        "☁️ Lưu Category lên GitHub (đúng như bảng đang hiển thị — xoá dòng nào thì mất dòng đó)",
-                        use_container_width=True,
-                        key="save_cat_github_btn",
-                    ):
-                        payload = build_category_override_payload(
-                            st.session_state.local_cat_data.fillna("").to_dict("records")
-                        )
-                        ok, msg = save_github_json(
-                            GH_CATEGORY_OVERRIDE_PATH, payload, "Cập nhật category overrides từ tool PIM"
-                        )
-                        if ok:
-                            load_github_json.clear()
-                            st.success(msg)
-                        else:
-                            st.error(msg)
-
-                st.markdown(
-                    '<div class="dmx-zone-title dmx-zone-map">🏷️ Vùng 2 — Thuộc tính CMS/PIM '
-                    '<span class="dmx-zone-tag dmx-zone-tag-alt">đè giá trị mới lên thuộc tính vừa sửa</span></div>',
-                    unsafe_allow_html=True,
-                )
-                with st.container(border=True):
-                    st.caption("Map tên thuộc tính lấy được từ web sang mã cột PIM")
-                    st.session_state.local_map_data = st.data_editor(
-                        st.session_state.local_map_data,
-                        num_rows="dynamic",
-                        use_container_width=True,
-                        key="local_map_editor",
-                        column_config={
-                            "cate_id": st.column_config.TextColumn("cate_id (web hoặc CMS)", width="small"),
-                            "cms_attr_name": st.column_config.TextColumn("Tên thuộc tính (lấy từ web)"),
-                            "pim_code": st.column_config.TextColumn("Mã cột PIM"),
-                        },
-                    )
-                    map_xlsx = st.file_uploader(
-                        "📂 Hoặc nạp nhanh từ file Excel (cột: cate_id, cms_attr_name, pim_code — "
-                        "không đúng tên cột thì tool lấy theo đúng thứ tự 3 cột đầu)",
-                        type=["xlsx", "xls"],
-                        key="local_map_xlsx_uploader",
-                    )
-                    if map_xlsx is not None:
-                        try:
-                            new_rows = read_override_excel(
-                                map_xlsx, ["cate_id", "cms_attr_name", "pim_code"]
-                            )
-                            st.session_state.local_map_data = (
-                                pd.concat([st.session_state.local_map_data, new_rows], ignore_index=True)
-                                .drop_duplicates(subset=["cate_id", "cms_attr_name"], keep="last")
-                            )
-                            st.caption(f"✅ Đã nạp {len(new_rows)} dòng thuộc tính từ file Excel vào bảng trên.")
-                        except Exception as e:  # noqa: BLE001
-                            st.error(f"Không đọc được file Excel: {e}")
-
-                    if st.button(
-                        "☁️ Lưu thuộc tính CMS/PIM lên GitHub (ĐÈ giá trị mới lên đúng thuộc tính vừa sửa)",
-                        use_container_width=True,
-                        key="save_map_github_btn",
-                    ):
-                        payload = build_mapping_override_payload(
-                            st.session_state.local_map_data.fillna("").to_dict("records")
-                        )
-                        ok, msg = save_github_json(
-                            GH_MAPPING_OVERRIDE_PATH, payload, "Cập nhật CMS/PIM mapping overrides từ tool PIM"
-                        )
-                        if ok:
-                            load_github_json.clear()
-                            st.success(msg)
-                        else:
-                            st.error(msg)
-
-                st.caption(
-                    "ℹ️ 2 kho lưu trên GitHub tách biệt hoàn toàn: `category_overrides.json` và "
-                    "`cmspim_overrides.json` — sửa bên nào chỉ ảnh hưởng đúng file của bên đó. Bấm "
-                    "Lưu vẫn ở nguyên tab \"🔄 Chuyển đổi PIM\", không bị nhảy tab.\n\n"
-                    "🗑️ **Muốn xoá dòng sai (hoặc xoá bớt mã cột PIM bị nhầm):** 2 bảng ở trên đã tự "
-                    "nạp đúng dữ liệu đang lưu trên GitHub ngay khi mở tool — cứ xoá thẳng trong "
-                    "bảng (bôi đen dòng cần xoá rồi bấm phím Delete/Backspace, hoặc icon thùng rác ở "
-                    "cuối dòng khi rê chuột vào; với 1 mã cột PIM bị sai trong ô \"Cột PIM\" thì sửa "
-                    "trực tiếp chuỗi `mã:Tên; mã:Tên` trong ô đó), rồi bấm nút ☁️ Lưu tương ứng — dòng/"
-                    "mã bị xoá sẽ mất trên GitHub luôn, KHÔNG tự động thêm lại."
-                )
-
-                dl_col, ul_col = st.columns(2)
-                override_payload = json.dumps(
-                    {
-                        "category": st.session_state.local_cat_data.fillna("").to_dict("records"),
-                        "mapping": st.session_state.local_map_data.fillna("").to_dict("records"),
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                ).encode("utf-8")
-                dl_col.download_button(
-                    "💾 Lưu cấu hình bổ sung ra file (dùng lại lần sau)",
-                    data=override_payload,
-                    file_name="dmx_pim_cau_hinh_bo_sung.json",
-                    mime="application/json",
-                    use_container_width=True,
-                )
-                override_file = ul_col.file_uploader(
-                    "📂 Nạp lại file cấu hình bổ sung đã lưu", type=["json"], key="override_uploader"
-                )
-                if override_file is not None:
-                    try:
-                        payload = json.loads(override_file.getvalue().decode("utf-8"))
-                        st.session_state.local_cat_data = pd.DataFrame(
-                            payload.get("category", []),
-                            columns=["cate_id", "cate_name", "columns_text"],
-                        )
-                        st.session_state.local_map_data = pd.DataFrame(
-                            payload.get("mapping", []),
-                            columns=["cate_id", "cms_attr_name", "pim_code"],
-                        )
-                        st.success("Đã nạp cấu hình bổ sung từ file. Kéo lên xem lại bảng ở trên.")
-                    except Exception as e:  # noqa: BLE001
-                        st.error(f"File không đúng định dạng: {e}")
-
-            if st.button("🔄 Chuyển đổi sang PIM", use_container_width=True, type="primary"):
+            if pim_subtab == PIM_SUBTABS[1]:
+                # -- Vùng hiển thị ALL: tổng quan toàn bộ category đang có cấu hình
+                # (Google Sheet + cấu hình bổ sung đã lưu/đang sửa), để biết đã
+                # "import"/cấu hình được bao nhiêu category rồi, không phải bấm
+                # Chuyển đổi mới xem được.
                 try:
-                    with st.spinner("Đang tải cấu hình category + mapping CMS/PIM từ Google Sheet..."):
-                        cat_config = load_category_config()
-                        mapping_by_cate, cate_name_to_id, cate_id_to_name = load_cmspim_mapping()
-                    if not cat_config or not mapping_by_cate:
-                        st.error(
-                            "Không tải được dữ liệu cấu hình từ Google Sheet (trống hoặc đổi cấu trúc "
-                            "cột). Kiểm tra lại sheet rồi thử lại."
-                        )
+                    overview_cat_config = load_category_config()
+                except Exception:  # noqa: BLE001
+                    overview_cat_config = {}
+                try:
+                    overview_mapping_by_cate, _ov_n2i, _ov_i2n = load_cmspim_mapping()
+                except Exception:  # noqa: BLE001
+                    overview_mapping_by_cate = {}
+                overview_cat_config = merge_local_category_config(
+                    overview_cat_config, st.session_state.local_cat_data.fillna("").to_dict("records")
+                )
+                overview_mapping_by_cate = merge_local_mapping(
+                    overview_mapping_by_cate, st.session_state.local_map_data.fillna("").to_dict("records")
+                )
+                overview_rows = [
+                    {
+                        "cate_id": cid,
+                        "Tên category": cfg["name"] or "(chưa đặt tên)",
+                        "Số cột PIM đã cấu hình": len(cfg["columns"]),
+                        "Số thuộc tính CMS đã map": len(overview_mapping_by_cate.get(cid, {})),
+                    }
+                    for cid, cfg in overview_cat_config.items()
+                ]
+                overview_rows.sort(key=lambda r: r["Tên category"])
+                oc1, oc2, oc3 = st.columns(3)
+                oc1.metric("🗂️ Tổng số category đã cấu hình", len(overview_rows))
+                oc2.metric(
+                    "📐 Category có cột PIM",
+                    sum(1 for r in overview_rows if r["Số cột PIM đã cấu hình"] > 0),
+                )
+                oc3.metric(
+                    "🏷️ Category có thuộc tính đã map",
+                    sum(1 for r in overview_rows if r["Số thuộc tính CMS đã map"] > 0),
+                )
+                with st.expander(f"🌐 Xem ALL — toàn bộ {len(overview_rows)} category đã cấu hình", expanded=False):
+                    if overview_rows:
+                        st.dataframe(pd.DataFrame(overview_rows), use_container_width=True, hide_index=True)
                     else:
-                        local_cat_rows = st.session_state.local_cat_data.fillna("").to_dict("records")
-                        local_map_rows = st.session_state.local_map_data.fillna("").to_dict("records")
-                        # cate_name auto-inferred from cate_id when left blank. Priority: the
-                        # CMS/PIM category data the user themselves loaded into the "Cấu hình
-                        # bổ sung" table (typed in, or nạp từ file Excel — cate_id + cate_name
-                        # đi cùng nhau) is the authoritative source; the live Google Sheet and
-                        # the name scraped from the site's breadcrumb are only used as a last
-                        # resort when that cate_id hasn't been loaded locally yet.
-                        fallback_names = dict(cate_id_to_name)
-                        for r in ok_results:
-                            cid = str(r.get("cate_id") or "").strip()
-                            cname = r.get("cate_name") or ""
-                            if cid and cname:
-                                fallback_names[cid] = cname
-                        for row in local_cat_rows:
-                            cid = str(row.get("cate_id") or "").strip()
-                            cname = str(row.get("cate_name") or "").strip()
-                            if cid and cname:
-                                fallback_names[cid] = cname  # user's own loaded data wins
-                        cat_config = merge_local_category_config(cat_config, local_cat_rows, fallback_names)
-                        mapping_by_cate = merge_local_mapping(mapping_by_cate, local_map_rows)
+                        st.caption("Chưa có category nào được cấu hình (cả trên Google Sheet lẫn cấu hình bổ sung).")
 
-                        sheets, unmatched_cate, unmatched_attrs = convert_results_to_pim(
-                            ok_results, cat_config, mapping_by_cate, cate_name_to_id, cate_id_to_name
-                        )
-                        st.session_state["pim_workbook"] = build_pim_workbook(
-                            sheets, unmatched_cate, unmatched_attrs
-                        )
-                        st.session_state["pim_stats"] = {
-                            "matched_products": sum(len(v["rows"]) for v in sheets.values()),
-                            "categories": len(sheets),
-                            "unmatched_category": len(unmatched_cate),
-                            "unmatched_attrs": len(unmatched_attrs),
-                        }
-                        # keep the raw unmatched lists (deduped) around so the "seed" buttons
-                        # above can pre-fill the local override tables on the next run
-                        seen_cate = set()
-                        cate_list = []
-                        for r in unmatched_cate:
-                            key = (str(r.get("cate_id") or ""), r.get("cate_name") or "")
-                            if key not in seen_cate:
-                                seen_cate.add(key)
-                                cate_list.append(key)
-                        st.session_state["pim_unmatched_category_list"] = cate_list
-
-                        seen_attr = set()
-                        attr_list = []
-                        for e in unmatched_attrs:
-                            key = (str(e.get("cate_id") or ""), e.get("attr") or "")
-                            if key not in seen_attr:
-                                seen_attr.add(key)
-                                attr_list.append(key)
-                        st.session_state["pim_unmatched_attrs_list"] = attr_list
-
-                        # Đối chiếu chéo đa luồng để bắt các trường hợp khả nghi
-                        # (mã PIM sai/không khớp cấu hình, gộp nhầm nhiều giá trị)
-                        # trước khi người dùng tải file — chạy song song theo category.
-                        st.session_state["pim_cross_check_warnings"] = cross_check_conversion(
-                            cat_config, mapping_by_cate, sheets
-                        )
-
-                        st.success("Đã chuyển đổi xong, xem kết quả bên dưới.")
-                except requests.exceptions.RequestException as e:
-                    st.error(f"Không kết nối được tới Google Sheet: {e}")
-
-            if "pim_stats" in st.session_state:
-                stats = st.session_state["pim_stats"]
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("✅ Sản phẩm đã map", stats["matched_products"])
-                c2.metric("🗂️ Category ra file", stats["categories"])
-                c3.metric("❓ Không xác định category", stats["unmatched_category"])
-                c4.metric("⚠️ Thuộc tính chưa map", stats["unmatched_attrs"])
-                if stats["unmatched_category"] or stats["unmatched_attrs"]:
-                    st.warning(
-                        f"⚠️ Thiếu cấu hình: {stats['unmatched_category']} category chưa xác định "
-                        f"được, {stats['unmatched_attrs']} thuộc tính chưa map được mã PIM. Chi tiết "
-                        "nằm trong sheet \"Chưa xác định category\" / \"Thuộc tính chưa map\" của file "
-                        "tải về, hoặc bấm nút \"➕ Nạp...\" ở khung Cấu hình bổ sung phía trên để điền "
-                        "nhanh ngay trong tool rồi chuyển đổi lại."
+                has_unmatched = bool(
+                    st.session_state.get("pim_unmatched_category_list")
+                    or st.session_state.get("pim_unmatched_attrs_list")
+                )
+                with st.expander(
+                    "🛠️ Cấu hình bổ sung: thêm/sửa Category & thuộc tính CMS/PIM ngay trong tool",
+                    expanded=has_unmatched,
+                ):
+                    st.caption(
+                        "Dùng khi category hoặc thuộc tính chưa có (hoặc chưa đúng) trên Google Sheet — "
+                        "nhập tạm ở đây để chuyển đổi ngay, không cần chờ cập nhật sheet. Cấu hình bổ "
+                        "sung sẽ được **gộp thêm vào** dữ liệu Google Sheet lúc bấm Chuyển đổi (không xoá "
+                        "gì trên sheet). Khi rảnh, bạn có thể copy các dòng này lên Google Sheet để dùng "
+                        "chung về sau."
                     )
 
-                cross_check_warnings = st.session_state.get("pim_cross_check_warnings") or []
-                if cross_check_warnings:
-                    with st.expander(
-                        f"🧵 Đối chiếu đa luồng phát hiện {len(cross_check_warnings)} trường hợp khả nghi",
-                        expanded=True,
+                    seed_col1, seed_col2 = st.columns(2)
+                    if seed_col1.button(
+                        "➕ Nạp category chưa xác định (lần chuyển đổi gần nhất)",
+                        use_container_width=True,
+                        disabled=not st.session_state.get("pim_unmatched_category_list"),
                     ):
-                        for w in cross_check_warnings[:100]:
-                            st.markdown(f"- **{w['loai']}**: {w['chi_tiet']}")
-                        if len(cross_check_warnings) > 100:
-                            st.caption(f"... và {len(cross_check_warnings) - 100} trường hợp khác (đã ẩn bớt).")
-                else:
-                    st.caption("🧵 Đối chiếu đa luồng: không phát hiện bất thường.")
+                        seed_rows = [
+                            {"cate_id": cid, "cate_name": cname, "columns_text": ""}
+                            for cid, cname in st.session_state.get("pim_unmatched_category_list", [])
+                        ]
+                        existing = st.session_state.local_cat_data
+                        st.session_state.local_cat_data = (
+                            pd.concat([existing, pd.DataFrame(seed_rows)], ignore_index=True)
+                            .drop_duplicates(subset=["cate_id"], keep="first")
+                        )
+                        st.rerun()
+                    if seed_col2.button(
+                        "➕ Nạp thuộc tính chưa map (lần chuyển đổi gần nhất)",
+                        use_container_width=True,
+                        disabled=not st.session_state.get("pim_unmatched_attrs_list"),
+                    ):
+                        seed_rows = [
+                            {"cate_id": cid, "cms_attr_name": attr, "pim_code": ""}
+                            for cid, attr in st.session_state.get("pim_unmatched_attrs_list", [])
+                        ]
+                        existing = st.session_state.local_map_data
+                        st.session_state.local_map_data = (
+                            pd.concat([existing, pd.DataFrame(seed_rows)], ignore_index=True)
+                            .drop_duplicates(subset=["cate_id", "cms_attr_name"], keep="first")
+                        )
+                        st.rerun()
 
-                st.download_button(
-                    "⬇️ Tải file PIM (xlsx, 1 sheet / category)",
-                    data=st.session_state["pim_workbook"],
-                    file_name="dienmayxanh_pim_import.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                )
+                    st.markdown(
+                        '<div class="dmx-zone-title dmx-zone-cat">📁 Vùng 1 — Category '
+                        '<span class="dmx-zone-tag">sửa/xoá gì trong bảng, Lưu là áp dụng đúng vậy trên GitHub</span></div>',
+                        unsafe_allow_html=True,
+                    )
+                    with st.container(border=True):
+                        st.caption("Mỗi dòng 1 category; cột PIM nhập dạng `mã:Tên hiển thị` cách nhau bởi `;`")
+                        st.session_state.local_cat_data = st.data_editor(
+                            st.session_state.local_cat_data,
+                            num_rows="dynamic",
+                            use_container_width=True,
+                            key="local_cat_editor",
+                            column_config={
+                                "cate_id": st.column_config.TextColumn("cate_id (web hoặc CMS)", width="small"),
+                                "cate_name": st.column_config.TextColumn(
+                                    "Tên category (để trống cũng được, tool tự suy ra từ cate_id)"
+                                ),
+                                "columns_text": st.column_config.TextColumn(
+                                    "Cột PIM (mã:Tên; mã:Tên; ...)", width="large"
+                                ),
+                            },
+                        )
+                        cat_xlsx = st.file_uploader(
+                            "📂 Hoặc nạp nhanh từ file Excel template thật (kiểu Export Product "
+                            "Template — cột A = CATEGORY ID, cột B = CATEGORY NAME, từ cột C trở đi "
+                            "là các MÃ TSKT làm tên cột luôn; mỗi dòng dữ liệu = 1 category, ô nào có "
+                            "giá trị (tên hiển thị tiếng Việt) thì category đó dùng mã cột đó, ô trống "
+                            "là không dùng — 1 file gộp được nhiều category cùng lúc)",
+                            type=["xlsx", "xls"],
+                            key="local_cat_xlsx_uploader",
+                        )
+                        if cat_xlsx is not None:
+                            try:
+                                new_rows = read_category_columns_excel(cat_xlsx)
+                                st.session_state.local_cat_data = (
+                                    pd.concat([st.session_state.local_cat_data, new_rows], ignore_index=True)
+                                    .drop_duplicates(subset=["cate_id"], keep="last")
+                                )
+                                st.caption(f"✅ Đã nạp {len(new_rows)} category từ file Excel vào bảng trên.")
+                            except Exception as e:  # noqa: BLE001
+                                st.error(f"Không đọc được file Excel: {e}")
+
+                        if st.button(
+                            "☁️ Lưu Category lên GitHub (đúng như bảng đang hiển thị — xoá dòng nào thì mất dòng đó)",
+                            use_container_width=True,
+                            key="save_cat_github_btn",
+                        ):
+                            payload = build_category_override_payload(
+                                st.session_state.local_cat_data.fillna("").to_dict("records")
+                            )
+                            ok, msg = save_github_json(
+                                GH_CATEGORY_OVERRIDE_PATH, payload, "Cập nhật category overrides từ tool PIM"
+                            )
+                            if ok:
+                                load_github_json.clear()
+                                st.success(msg)
+                            else:
+                                st.error(msg)
+
+                    st.markdown(
+                        '<div class="dmx-zone-title dmx-zone-map">🏷️ Vùng 2 — Thuộc tính CMS/PIM '
+                        '<span class="dmx-zone-tag dmx-zone-tag-alt">đè giá trị mới lên thuộc tính vừa sửa</span></div>',
+                        unsafe_allow_html=True,
+                    )
+                    with st.container(border=True):
+                        st.caption("Map tên thuộc tính lấy được từ web sang mã cột PIM")
+                        st.session_state.local_map_data = st.data_editor(
+                            st.session_state.local_map_data,
+                            num_rows="dynamic",
+                            use_container_width=True,
+                            key="local_map_editor",
+                            column_config={
+                                "cate_id": st.column_config.TextColumn("cate_id (web hoặc CMS)", width="small"),
+                                "cms_attr_name": st.column_config.TextColumn("Tên thuộc tính (lấy từ web)"),
+                                "pim_code": st.column_config.TextColumn("Mã cột PIM"),
+                            },
+                        )
+                        map_xlsx = st.file_uploader(
+                            "📂 Hoặc nạp nhanh từ file Excel đối chiếu CMS/PIM thật (nhận đúng các "
+                            "cột: MÃ NGÀNH HÀNG CMS / TÊN THUỘC TÍNH TSKT / MÃ MASTER — hoặc "
+                            "cate_id/cms_attr_name/pim_code; quét TẤT CẢ sheet trong file, không chỉ "
+                            "sheet đầu)",
+                            type=["xlsx", "xls"],
+                            key="local_map_xlsx_uploader",
+                        )
+                        if map_xlsx is not None:
+                            try:
+                                new_rows = read_cmspim_mapping_excel(map_xlsx)
+                                st.session_state.local_map_data = (
+                                    pd.concat([st.session_state.local_map_data, new_rows], ignore_index=True)
+                                    .drop_duplicates(subset=["cate_id", "cms_attr_name"], keep="last")
+                                )
+                                st.caption(
+                                    f"✅ Đã nạp {len(new_rows)} dòng thuộc tính từ file Excel vào bảng trên "
+                                    f"(quét toàn bộ sheet trong file)."
+                                )
+                            except Exception as e:  # noqa: BLE001
+                                st.error(f"Không đọc được file Excel: {e}")
+
+                        if st.button(
+                            "☁️ Lưu thuộc tính CMS/PIM lên GitHub (ĐÈ giá trị mới lên đúng thuộc tính vừa sửa)",
+                            use_container_width=True,
+                            key="save_map_github_btn",
+                        ):
+                            payload = build_mapping_override_payload(
+                                st.session_state.local_map_data.fillna("").to_dict("records")
+                            )
+                            ok, msg = save_github_json(
+                                GH_MAPPING_OVERRIDE_PATH, payload, "Cập nhật CMS/PIM mapping overrides từ tool PIM"
+                            )
+                            if ok:
+                                load_github_json.clear()
+                                st.success(msg)
+                            else:
+                                st.error(msg)
+
+                    st.caption(
+                        "ℹ️ 2 kho lưu trên GitHub tách biệt hoàn toàn: `category_overrides.json` và "
+                        "`cmspim_overrides.json` — sửa bên nào chỉ ảnh hưởng đúng file của bên đó. Bấm "
+                        "Lưu vẫn ở nguyên tab \"🔄 Chuyển đổi PIM\", không bị nhảy tab.\n\n"
+                        "🗑️ **Muốn xoá dòng sai (hoặc xoá bớt mã cột PIM bị nhầm):** 2 bảng ở trên đã tự "
+                        "nạp đúng dữ liệu đang lưu trên GitHub ngay khi mở tool — cứ xoá thẳng trong "
+                        "bảng (bôi đen dòng cần xoá rồi bấm phím Delete/Backspace, hoặc icon thùng rác ở "
+                        "cuối dòng khi rê chuột vào; với 1 mã cột PIM bị sai trong ô \"Cột PIM\" thì sửa "
+                        "trực tiếp chuỗi `mã:Tên; mã:Tên` trong ô đó), rồi bấm nút ☁️ Lưu tương ứng — dòng/"
+                        "mã bị xoá sẽ mất trên GitHub luôn, KHÔNG tự động thêm lại."
+                    )
+
+                    dl_col, ul_col = st.columns(2)
+                    override_payload = json.dumps(
+                        {
+                            "category": st.session_state.local_cat_data.fillna("").to_dict("records"),
+                            "mapping": st.session_state.local_map_data.fillna("").to_dict("records"),
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    ).encode("utf-8")
+                    dl_col.download_button(
+                        "💾 Lưu cấu hình bổ sung ra file (dùng lại lần sau)",
+                        data=override_payload,
+                        file_name="dmx_pim_cau_hinh_bo_sung.json",
+                        mime="application/json",
+                        use_container_width=True,
+                    )
+                    override_file = ul_col.file_uploader(
+                        "📂 Nạp lại file cấu hình bổ sung đã lưu", type=["json"], key="override_uploader"
+                    )
+                    if override_file is not None:
+                        try:
+                            payload = json.loads(override_file.getvalue().decode("utf-8"))
+                            st.session_state.local_cat_data = pd.DataFrame(
+                                payload.get("category", []),
+                                columns=["cate_id", "cate_name", "columns_text"],
+                            )
+                            st.session_state.local_map_data = pd.DataFrame(
+                                payload.get("mapping", []),
+                                columns=["cate_id", "cms_attr_name", "pim_code"],
+                            )
+                            st.success("Đã nạp cấu hình bổ sung từ file. Kéo lên xem lại bảng ở trên.")
+                        except Exception as e:  # noqa: BLE001
+                            st.error(f"File không đúng định dạng: {e}")
+
+            else:
+                if st.button("🔄 Chuyển đổi sang PIM", use_container_width=True, type="primary"):
+                    try:
+                        with st.spinner("Đang tải cấu hình category + mapping CMS/PIM từ Google Sheet..."):
+                            cat_config = load_category_config()
+                            mapping_by_cate, cate_name_to_id, cate_id_to_name = load_cmspim_mapping()
+                        if not cat_config or not mapping_by_cate:
+                            st.error(
+                                "Không tải được dữ liệu cấu hình từ Google Sheet (trống hoặc đổi cấu trúc "
+                                "cột). Kiểm tra lại sheet rồi thử lại."
+                            )
+                        else:
+                            local_cat_rows = st.session_state.local_cat_data.fillna("").to_dict("records")
+                            local_map_rows = st.session_state.local_map_data.fillna("").to_dict("records")
+                            # cate_name auto-inferred from cate_id when left blank. Priority: the
+                            # CMS/PIM category data the user themselves loaded into the "Cấu hình
+                            # bổ sung" table (typed in, or nạp từ file Excel — cate_id + cate_name
+                            # đi cùng nhau) is the authoritative source; the live Google Sheet and
+                            # the name scraped from the site's breadcrumb are only used as a last
+                            # resort when that cate_id hasn't been loaded locally yet.
+                            fallback_names = dict(cate_id_to_name)
+                            for r in ok_results:
+                                cid = str(r.get("cate_id") or "").strip()
+                                cname = r.get("cate_name") or ""
+                                if cid and cname:
+                                    fallback_names[cid] = cname
+                            for row in local_cat_rows:
+                                cid = str(row.get("cate_id") or "").strip()
+                                cname = str(row.get("cate_name") or "").strip()
+                                if cid and cname:
+                                    fallback_names[cid] = cname  # user's own loaded data wins
+                            cat_config = merge_local_category_config(cat_config, local_cat_rows, fallback_names)
+                            mapping_by_cate = merge_local_mapping(mapping_by_cate, local_map_rows)
+
+                            sheets, unmatched_cate, unmatched_attrs = convert_results_to_pim(
+                                ok_results, cat_config, mapping_by_cate, cate_name_to_id, cate_id_to_name
+                            )
+                            st.session_state["pim_workbook"] = build_pim_workbook(
+                                sheets, unmatched_cate, unmatched_attrs
+                            )
+                            st.session_state["pim_stats"] = {
+                                "matched_products": sum(len(v["rows"]) for v in sheets.values()),
+                                "categories": len(sheets),
+                                "unmatched_category": len(unmatched_cate),
+                                "unmatched_attrs": len(unmatched_attrs),
+                            }
+                            # keep the raw unmatched lists (deduped) around so the "seed" buttons
+                            # above can pre-fill the local override tables on the next run
+                            seen_cate = set()
+                            cate_list = []
+                            for r in unmatched_cate:
+                                key = (str(r.get("cate_id") or ""), r.get("cate_name") or "")
+                                if key not in seen_cate:
+                                    seen_cate.add(key)
+                                    cate_list.append(key)
+                            st.session_state["pim_unmatched_category_list"] = cate_list
+
+                            seen_attr = set()
+                            attr_list = []
+                            for e in unmatched_attrs:
+                                key = (str(e.get("cate_id") or ""), e.get("attr") or "")
+                                if key not in seen_attr:
+                                    seen_attr.add(key)
+                                    attr_list.append(key)
+                            st.session_state["pim_unmatched_attrs_list"] = attr_list
+
+                            # Đối chiếu chéo đa luồng để bắt các trường hợp khả nghi
+                            # (mã PIM sai/không khớp cấu hình, gộp nhầm nhiều giá trị)
+                            # trước khi người dùng tải file — chạy song song theo category.
+                            st.session_state["pim_cross_check_warnings"] = cross_check_conversion(
+                                cat_config, mapping_by_cate, sheets
+                            )
+
+                            st.success("Đã chuyển đổi xong, xem kết quả bên dưới.")
+                    except requests.exceptions.RequestException as e:
+                        st.error(f"Không kết nối được tới Google Sheet: {e}")
+
+                if "pim_stats" in st.session_state:
+                    stats = st.session_state["pim_stats"]
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("✅ Sản phẩm đã map", stats["matched_products"])
+                    c2.metric("🗂️ Category ra file", stats["categories"])
+                    c3.metric("❓ Không xác định category", stats["unmatched_category"])
+                    c4.metric("⚠️ Thuộc tính chưa map", stats["unmatched_attrs"])
+                    if stats["unmatched_category"] or stats["unmatched_attrs"]:
+                        st.warning(
+                            f"⚠️ Thiếu cấu hình: {stats['unmatched_category']} category chưa xác định "
+                            f"được, {stats['unmatched_attrs']} thuộc tính chưa map được mã PIM. Chi tiết "
+                            "nằm trong sheet \"Chưa xác định category\" / \"Thuộc tính chưa map\" của file "
+                            "tải về, hoặc bấm nút \"➕ Nạp...\" ở khung Cấu hình bổ sung phía trên để điền "
+                            "nhanh ngay trong tool rồi chuyển đổi lại."
+                        )
+
+                    cross_check_warnings = st.session_state.get("pim_cross_check_warnings") or []
+                    if cross_check_warnings:
+                        with st.expander(
+                            f"🧵 Đối chiếu đa luồng phát hiện {len(cross_check_warnings)} trường hợp khả nghi",
+                            expanded=True,
+                        ):
+                            for w in cross_check_warnings[:100]:
+                                st.markdown(f"- **{w['loai']}**: {w['chi_tiet']}")
+                            if len(cross_check_warnings) > 100:
+                                st.caption(f"... và {len(cross_check_warnings) - 100} trường hợp khác (đã ẩn bớt).")
+                    else:
+                        st.caption("🧵 Đối chiếu đa luồng: không phát hiện bất thường.")
+
+                    st.download_button(
+                        "⬇️ Tải file PIM (xlsx, 1 sheet / category)",
+                        data=st.session_state["pim_workbook"],
+                        file_name="dienmayxanh_pim_import.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
