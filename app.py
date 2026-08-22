@@ -457,6 +457,37 @@ def merge_local_mapping(mapping_by_cate, local_rows):
     return mapping_by_cate
 
 
+def read_override_excel(file, expected_cols):
+    """Read a user-supplied xlsx into a DataFrame with exactly `expected_cols`
+    columns (in that order). Matches by header name (case/whitespace-insensitive)
+    when possible; otherwise falls back to positional (first N columns), so a
+    quickly-thrown-together spreadsheet without exact headers still works.
+    Fully-empty rows are dropped, everything else is coerced to text."""
+    df = pd.read_excel(file)
+    df.columns = [str(c).strip() for c in df.columns]
+    lower_map = {c.lower(): c for c in df.columns}
+    col_map = {}
+    for col in expected_cols:
+        if col in df.columns:
+            col_map[col] = col
+        elif col.lower() in lower_map:
+            col_map[col] = lower_map[col.lower()]
+    if len(col_map) == len(expected_cols):
+        df = df[[col_map[c] for c in expected_cols]]
+        df.columns = expected_cols
+    else:
+        df = df.iloc[:, : len(expected_cols)]
+        df.columns = expected_cols[: len(df.columns)]
+        for c in expected_cols[len(df.columns):]:
+            df[c] = ""
+        df = df[expected_cols]
+    df = df.fillna("").astype(str)
+    for c in expected_cols:
+        df[c] = df[c].str.strip()
+    df = df[(df != "").any(axis=1)].reset_index(drop=True)
+    return df
+
+
 def match_category(r, cat_config, cate_name_to_id):
     """Find the CẤU HÌNH CATEGORY entry for a scraped product: try the scraped
     cate_id directly first, then fall back to matching by normalized category
@@ -1163,6 +1194,24 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                         ),
                     },
                 )
+                cat_xlsx = st.file_uploader(
+                    "📂 Hoặc nạp nhanh từ file Excel (cột: cate_id, cate_name, columns_text — "
+                    "không đúng tên cột thì tool lấy theo đúng thứ tự 3 cột đầu)",
+                    type=["xlsx", "xls"],
+                    key="local_cat_xlsx_uploader",
+                )
+                if cat_xlsx is not None:
+                    try:
+                        new_rows = read_override_excel(
+                            cat_xlsx, ["cate_id", "cate_name", "columns_text"]
+                        )
+                        st.session_state.local_cat_data = (
+                            pd.concat([st.session_state.local_cat_data, new_rows], ignore_index=True)
+                            .drop_duplicates(subset=["cate_id"], keep="last")
+                        )
+                        st.caption(f"✅ Đã nạp {len(new_rows)} dòng category từ file Excel vào bảng trên.")
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Không đọc được file Excel: {e}")
 
                 st.markdown("**🏷️ Thuộc tính CMS/PIM** — map tên thuộc tính lấy được từ web sang mã cột PIM")
                 st.session_state.local_map_data = st.data_editor(
@@ -1176,6 +1225,24 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                         "pim_code": st.column_config.TextColumn("Mã cột PIM"),
                     },
                 )
+                map_xlsx = st.file_uploader(
+                    "📂 Hoặc nạp nhanh từ file Excel (cột: cate_id, cms_attr_name, pim_code — "
+                    "không đúng tên cột thì tool lấy theo đúng thứ tự 3 cột đầu)",
+                    type=["xlsx", "xls"],
+                    key="local_map_xlsx_uploader",
+                )
+                if map_xlsx is not None:
+                    try:
+                        new_rows = read_override_excel(
+                            map_xlsx, ["cate_id", "cms_attr_name", "pim_code"]
+                        )
+                        st.session_state.local_map_data = (
+                            pd.concat([st.session_state.local_map_data, new_rows], ignore_index=True)
+                            .drop_duplicates(subset=["cate_id", "cms_attr_name"], keep="last")
+                        )
+                        st.caption(f"✅ Đã nạp {len(new_rows)} dòng thuộc tính từ file Excel vào bảng trên.")
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Không đọc được file Excel: {e}")
 
                 dl_col, ul_col = st.columns(2)
                 override_payload = json.dumps(
