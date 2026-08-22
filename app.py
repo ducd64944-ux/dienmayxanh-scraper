@@ -424,46 +424,44 @@ def save_github_json(path: str, data, commit_message: str):
 
 
 def build_category_override_payload(local_cat_rows):
-    """Gộp bảng category đang sửa trong tool với dữ liệu ĐÃ lưu trên GitHub —
-    NỐI THÊM/mở rộng cột, không bao giờ xoá category hay cột đã lưu trước đó."""
-    persisted = load_github_json(GH_CATEGORY_OVERRIDE_PATH)
-    persisted_config = {}
-    for row in persisted:
+    """Chuẩn hoá bảng category đang sửa trong tool thành payload để lưu lên
+    GitHub. LƯU Ý: bảng này đã được tự nạp sẵn từ GitHub lúc mở tool (xem chỗ
+    seed `local_cat_data` trong UI), nên bản thân bảng đang hiển thị chính là
+    toàn bộ dữ liệu hiện có — KHÔNG gộp lại với bản trên GitHub ở bước lưu, để
+    nếu người dùng xoá 1 dòng (hoặc xoá bớt mã trong ô "Cột PIM") trong bảng
+    rồi bấm Lưu, dòng/mã đó thực sự biến mất trên GitHub thay vì bị merge-nối-
+    lại. Dòng nào trùng cate_id thì lấy dòng cuối cùng trong bảng."""
+    out = {}
+    for row in local_cat_rows or []:
         cid = str(row.get("cate_id") or "").strip()
         if not cid:
             continue
-        persisted_config[cid] = {
-            "name": row.get("cate_name") or "",
-            "columns": _parse_columns_text(row.get("columns_text")),
+        out[cid] = {
+            "cate_id": cid,
+            "cate_name": str(row.get("cate_name") or "").strip(),
+            "columns_text": str(row.get("columns_text") or "").strip(),
         }
-    merged = merge_local_category_config(persisted_config, local_cat_rows)
-    out = []
-    for cid, v in merged.items():
-        cols_text = "; ".join(f"{c}:{n}" for c, n in v["columns"])
-        out.append({"cate_id": cid, "cate_name": v["name"], "columns_text": cols_text})
-    return out
+    return list(out.values())
 
 
 def build_mapping_override_payload(local_map_rows):
-    """Gộp bảng mapping đang sửa trong tool với dữ liệu ĐÃ lưu trên GitHub —
-    thuộc tính nào được sửa thì ĐÈ giá trị mới lên đúng (cate_id, tên thuộc
-    tính) đó, các thuộc tính khác giữ nguyên như đã lưu."""
-    persisted = load_github_json(GH_MAPPING_OVERRIDE_PATH)
-    merged = {}
-    for row in persisted:
+    """Chuẩn hoá bảng mapping đang sửa trong tool thành payload để lưu lên
+    GitHub. Cùng lý do như build_category_override_payload: không gộp lại với
+    bản trên GitHub — bảng hiện tại (đã tự nạp từ GitHub lúc mở tool) là toàn
+    bộ dữ liệu, xoá dòng nào trong bảng rồi Lưu thì dòng đó mất trên GitHub
+    luôn. Dòng nào trùng (cate_id, tên thuộc tính) thì lấy dòng cuối trong bảng."""
+    out = {}
+    for row in local_map_rows or []:
         cid = str(row.get("cate_id") or "").strip()
         attr = str(row.get("cms_attr_name") or "").strip()
         if not (cid and attr):
             continue
-        merged[(cid, attr)] = {"cate_id": cid, "cms_attr_name": attr, "pim_code": row.get("pim_code") or ""}
-    for row in local_map_rows:
-        cid = str(row.get("cate_id") or "").strip()
-        attr = str(row.get("cms_attr_name") or "").strip()
-        code = str(row.get("pim_code") or "").strip()
-        if not (cid and attr and code):
-            continue
-        merged[(cid, attr)] = {"cate_id": cid, "cms_attr_name": attr, "pim_code": code}  # đè bản cũ
-    return list(merged.values())
+        out[(cid, attr)] = {
+            "cate_id": cid,
+            "cms_attr_name": attr,
+            "pim_code": str(row.get("pim_code") or "").strip(),
+        }
+    return list(out.values())
 
 
 def cross_check_conversion(cat_config, mapping_by_cate, sheets, max_workers=8):
@@ -482,7 +480,9 @@ def cross_check_conversion(cat_config, mapping_by_cate, sheets, max_workers=8):
         found = []
         info = sheets[cate_key]
         cfg = cat_config.get(cate_key)
-        valid_codes = {c for c, _ in cfg["columns"]} if cfg else {c for c, _ in info["columns"]}
+        valid_codes = (
+            {c for c, _ in cfg["columns"]} if cfg else {c for c, _ in info["columns"]}
+        ) | IDENTITY_CODES
         attr_map = mapping_by_cate.get(cate_key, {})
         for attr, code in attr_map.items():
             if code not in valid_codes:
@@ -822,20 +822,20 @@ def convert_results_to_pim(ok_results, cat_config, mapping_by_cate, cate_name_to
     return sheets, unmatched_category, unmatched_attrs
 
 
+IDENTITY_COLUMNS = [("model_code", "Mã model"), ("variant_code", "Mã biến thể")]
+IDENTITY_CODES = {c for c, _ in IDENTITY_COLUMNS}
+
+
 def build_pim_workbook(sheets, unmatched_category, unmatched_attrs) -> bytes:
-    """Build the IMPORT-format workbook, 1 sheet per category. Column layout is
-    driven entirely by CẤU HÌNH CATEGORY (+ local override table) — whatever
-    columns are configured there for a category (model_code, sku, variant_code,
-    or any attribute code) become the sheet's columns, in that exact order, so
-    the output matches the real PIM import template 1:1 (verified against the
-    "Importdaydongho.xlsx" reference: header row = machine codes, row 2 =
-    Vietnamese names, no extra identity columns beyond what's configured).
-    Columns not covered by a CMS spec mapping (e.g. model_code) are simply left
-    blank, same as the reference file expects the user to fill in afterwards.
-    3 reference-only columns are appended at the end (_product_id/_name/_url)
-    so a row can still be traced back to its source product while identity
-    columns like model_code stay blank — these are NOT part of the import
-    format itself, just a lookup aid for the person filling them in.
+    """Build the IMPORT-format workbook, 1 sheet per category. `model_code` +
+    `variant_code` are ALWAYS the first 2 columns of every category sheet
+    (labels "Mã model" / "Mã biến thể"), theo đúng yêu cầu — sau đó mới tới các
+    cột TSKT do CẤU HÌNH CATEGORY (+ local override table) quy định, theo đúng
+    thứ tự đã cấu hình. Nếu category đã tự khai `model_code`/`variant_code`
+    trong danh sách cột thì không bị lặp lại — 2 cột đó vẫn chỉ xuất hiện 1 lần,
+    ở đầu. Các cột không có dữ liệu map từ web (bao gồm 2 cột định danh này) để
+    trống, người dùng tự điền sau. 3 cột tham chiếu (_product_id/_name/_url)
+    vẫn được thêm ở cuối để dễ đối chiếu ngược lại sản phẩm.
     """
     wb = Workbook()
     wb.remove(wb.active)
@@ -853,8 +853,9 @@ def build_pim_workbook(sheets, unmatched_category, unmatched_attrs) -> bytes:
             title = f"{base_title[:28]}_{n}"
         ws = wb.create_sheet(title)
 
-        codes = [c for c, _ in info["columns"]]
-        names = [n for _, n in info["columns"]]
+        extra_columns = [(c, n) for c, n in info["columns"] if c not in IDENTITY_CODES]
+        codes = [c for c, _ in IDENTITY_COLUMNS] + [c for c, _ in extra_columns]
+        names = [n for _, n in IDENTITY_COLUMNS] + [n for _, n in extra_columns]
         header1 = codes + ref_cols
         header2 = names + ref_names
         ws.append(header1)
@@ -1380,10 +1381,12 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                 "(live) từ Google Sheet — bạn cập nhật bên đó là tool dùng ngay bản mới nhất, "
                 "không cần upload lại gì cả. Giá trị xuất ra là **text thô** (không mã hoá số), "
                 "nhiều dòng CMS map cùng 1 cột PIM sẽ được gộp và nối bằng dấu `|`. "
-                "Các cột trong file xuất ra **đúng theo cấu hình của từng category** trên sheet "
-                "CẤU HÌNH CATEGORY (kể cả `model_code` nếu bạn thêm nó vào danh sách cột — cột nào "
-                "không map được từ web như `model_code` sẽ để trống, bạn tự điền sau). Có thêm 3 cột "
-                "tham chiếu (Mã SP / Tên / URL) ở cuối mỗi sheet để dễ đối chiếu ngược lại sản phẩm."
+                "**2 cột đầu tiên của MỌI sheet category luôn là `model_code` (Mã model) và "
+                "`variant_code` (Mã biến thể)** — tự động thêm vào, không cần khai trong cấu hình "
+                "category; 2 cột này chưa map được từ web nên để trống, bạn tự điền sau. Sau đó mới "
+                "tới các cột TSKT theo đúng cấu hình của từng category trên sheet CẤU HÌNH CATEGORY. "
+                "Có thêm 3 cột tham chiếu (Mã SP / Tên / URL) ở cuối mỗi sheet để dễ đối chiếu ngược "
+                "lại sản phẩm."
             )
 
             # -- Local override area: add/edit Category config + CMS/PIM mapping right
@@ -1407,6 +1410,50 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                     if persisted_map
                     else pd.DataFrame(columns=["cate_id", "cms_attr_name", "pim_code"])
                 )
+
+            # -- Vùng hiển thị ALL: tổng quan toàn bộ category đang có cấu hình
+            # (Google Sheet + cấu hình bổ sung đã lưu/đang sửa), để biết đã
+            # "import"/cấu hình được bao nhiêu category rồi, không phải bấm
+            # Chuyển đổi mới xem được.
+            try:
+                overview_cat_config = load_category_config()
+            except Exception:  # noqa: BLE001
+                overview_cat_config = {}
+            try:
+                overview_mapping_by_cate, _ov_n2i, _ov_i2n = load_cmspim_mapping()
+            except Exception:  # noqa: BLE001
+                overview_mapping_by_cate = {}
+            overview_cat_config = merge_local_category_config(
+                overview_cat_config, st.session_state.local_cat_data.fillna("").to_dict("records")
+            )
+            overview_mapping_by_cate = merge_local_mapping(
+                overview_mapping_by_cate, st.session_state.local_map_data.fillna("").to_dict("records")
+            )
+            overview_rows = [
+                {
+                    "cate_id": cid,
+                    "Tên category": cfg["name"] or "(chưa đặt tên)",
+                    "Số cột PIM đã cấu hình": len(cfg["columns"]),
+                    "Số thuộc tính CMS đã map": len(overview_mapping_by_cate.get(cid, {})),
+                }
+                for cid, cfg in overview_cat_config.items()
+            ]
+            overview_rows.sort(key=lambda r: r["Tên category"])
+            oc1, oc2, oc3 = st.columns(3)
+            oc1.metric("🗂️ Tổng số category đã cấu hình", len(overview_rows))
+            oc2.metric(
+                "📐 Category có cột PIM",
+                sum(1 for r in overview_rows if r["Số cột PIM đã cấu hình"] > 0),
+            )
+            oc3.metric(
+                "🏷️ Category có thuộc tính đã map",
+                sum(1 for r in overview_rows if r["Số thuộc tính CMS đã map"] > 0),
+            )
+            with st.expander(f"🌐 Xem ALL — toàn bộ {len(overview_rows)} category đã cấu hình", expanded=False):
+                if overview_rows:
+                    st.dataframe(pd.DataFrame(overview_rows), use_container_width=True, hide_index=True)
+                else:
+                    st.caption("Chưa có category nào được cấu hình (cả trên Google Sheet lẫn cấu hình bổ sung).")
 
             has_unmatched = bool(
                 st.session_state.get("pim_unmatched_category_list")
@@ -1458,7 +1505,7 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
 
                 st.markdown(
                     '<div class="dmx-zone-title dmx-zone-cat">📁 Vùng 1 — Category '
-                    '<span class="dmx-zone-tag">nối thêm, không mất dữ liệu cũ</span></div>',
+                    '<span class="dmx-zone-tag">sửa/xoá gì trong bảng, Lưu là áp dụng đúng vậy trên GitHub</span></div>',
                     unsafe_allow_html=True,
                 )
                 with st.container(border=True):
@@ -1498,7 +1545,7 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                             st.error(f"Không đọc được file Excel: {e}")
 
                     if st.button(
-                        "☁️ Lưu Category lên GitHub (nối thêm cột, KHÔNG mất dữ liệu category đã lưu trước đó)",
+                        "☁️ Lưu Category lên GitHub (đúng như bảng đang hiển thị — xoá dòng nào thì mất dòng đó)",
                         use_container_width=True,
                         key="save_cat_github_btn",
                     ):
@@ -1569,10 +1616,15 @@ document.getElementById('dmxZipBtn').addEventListener('click', async () => {{
                             st.error(msg)
 
                 st.caption(
-                    "ℹ️ 2 kho lưu trên GitHub tách biệt hoàn toàn: `category_overrides.json` (nối "
-                    "thêm cột, không xoá) và `cmspim_overrides.json` (đè giá trị theo đúng thuộc "
-                    "tính vừa sửa) — sửa bên nào chỉ ảnh hưởng đúng file của bên đó. Bấm Lưu vẫn ở "
-                    "nguyên tab \"🔄 Chuyển đổi PIM\", không bị nhảy tab."
+                    "ℹ️ 2 kho lưu trên GitHub tách biệt hoàn toàn: `category_overrides.json` và "
+                    "`cmspim_overrides.json` — sửa bên nào chỉ ảnh hưởng đúng file của bên đó. Bấm "
+                    "Lưu vẫn ở nguyên tab \"🔄 Chuyển đổi PIM\", không bị nhảy tab.\n\n"
+                    "🗑️ **Muốn xoá dòng sai (hoặc xoá bớt mã cột PIM bị nhầm):** 2 bảng ở trên đã tự "
+                    "nạp đúng dữ liệu đang lưu trên GitHub ngay khi mở tool — cứ xoá thẳng trong "
+                    "bảng (bôi đen dòng cần xoá rồi bấm phím Delete/Backspace, hoặc icon thùng rác ở "
+                    "cuối dòng khi rê chuột vào; với 1 mã cột PIM bị sai trong ô \"Cột PIM\" thì sửa "
+                    "trực tiếp chuỗi `mã:Tên; mã:Tên` trong ô đó), rồi bấm nút ☁️ Lưu tương ứng — dòng/"
+                    "mã bị xoá sẽ mất trên GitHub luôn, KHÔNG tự động thêm lại."
                 )
 
                 dl_col, ul_col = st.columns(2)
